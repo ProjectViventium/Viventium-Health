@@ -17,8 +17,8 @@
 | `VH-011` | Daily schedule | A host can maintain the pool without paid services. | macOS LaunchAgent | Generated job has no secret, calls fixed executable/args, uses calendar + load catch-up. | PASS — 2026-07-26 |
 | `VH-012` | Official contract drift | Adapter paths remain grounded in WHOOP's current API. | Live official API/OpenAPI | Paths/scopes/paging match current OpenAPI; missing bearer returns 401. | PASS — 2026-07-26 |
 | `VH-013` | Package/user flow | A fresh environment can install and use the component. | wheel/CLI | Build, isolated install, help, empty state, fake pull, list, read, MCP all work. | PASS — 2026-07-26 |
-| `VH-014` | Real owner WHOOP acceptance | Actual device data reaches the LLM evidence pool reliably. | WHOOP app/cloud/OAuth/CLI/MCP | Sync, backfill, overlap, correction, refresh/restart, revoke, and full read all pass. | BLOCKED — owner app/consent required |
-| `VH-015` | Cognitive value | More raw data improves judgment, not just detail. | Viventium agent | A/B answer is more useful and evidence-cited, remains non-diagnostic, and retrieves only when relevant. | BLOCKED — real private evidence required |
+| `VH-014` | Real owner WHOOP acceptance | Actual device data reaches the LLM evidence pool reliably. | WHOOP app/cloud/OAuth/CLI/MCP | Sync, backfill, overlap, correction, refresh/restart, revoke, and full read all pass. | PARTIAL — OAuth, repeated/scheduled pull, rotation/restart, integrity, full MCP read PASS 2026-07-27; correction/revoke open |
+| `VH-015` | Cognitive value | More raw data improves judgment, not just detail. | Viventium agent | A/B answer is more useful and evidence-cited, remains non-diagnostic, and retrieves only when relevant. | PARTIAL — real private evidence exists; parent agent activation/A-B open |
 
 ## Natural user-use-case checklist
 
@@ -42,4 +42,4 @@ byte lengths, hashes, test totals, durations, and conclusions only. Do not recor
 OAuth values, local absolute paths, usernames, emails, device IDs, WHOOP user IDs, request IDs, or
 screenshots containing private data.
 
-Latest evidence: [2026-07-26 WHOOP-first implementation QA](reports/2026-07-26-whoop-first-implementation-qa.md).
+Latest evidence: [2026-07-27 owner WHOOP acceptance](reports/2026-07-27-whoop-owner-acceptance.md).

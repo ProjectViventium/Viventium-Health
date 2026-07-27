@@ -243,7 +243,9 @@ record = archive.write_response(
 - Live contract: download WHOOP's official OpenAPI document, verify configured resource paths,
   collection controls, and unauthenticated 401 behavior. No owner data.
 - Owner acceptance: real device/app/cloud sync, OAuth, daily repeat, late correction, restart,
-  refresh rotation, revoke, and LLM read. This remains `BLOCKED` without credentials and consent.
+  refresh rotation, revoke, and LLM read. OAuth, complete repeated pulls, rotating refresh across
+  processes, real daily scheduling, and full MCP replay passed on 2026-07-27; late correction,
+  explicit revocation, and parent-agent answer-quality evaluation remain open.
 
 ## Boundaries
 
@@ -286,7 +288,7 @@ Never:
 
 ## Open gates
 
-- A real WHOOP developer client ID, secret, registered redirect URI, and owner OAuth consent are
-  required for owner-data validation.
-- Parent Viventium installer/config/MCP registration is intentionally outside this isolated first
-  implementation. The component can be pinned after its own package and CLI/MCP paths are proven.
+- Observe a real WHOOP late sync/correction as a new immutable capture and test explicit revocation
+  when interrupting the active daily pool is acceptable.
+- Complete the parent Viventium config/MCP activation and run the cognitive-value A/B. The owning
+  parent integration remains outside this isolated component.

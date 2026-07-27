@@ -1,6 +1,7 @@
 # Viventium-Health: vision, requirements, architecture, and learnings
 
-**Status:** WHOOP-first implementation approved; owner-data validation pending explicit OAuth grant
+**Status:** WHOOP-first implementation and owner OAuth/data path validated; late-correction,
+revocation, and parent-agent cognitive A/B remain open
 
 **Owner:** Project Viventium
 
@@ -286,6 +287,22 @@ Real owner acceptance requires:
 9. a cognitive A/B showing material usefulness without unsupported medical meaning.
 
 Anything before those steps is `PARTIAL`, never “real WHOOP complete.”
+
+Owner acceptance progress on 2026-07-27:
+
+- steps 1–4 passed with all six read scopes plus offline refresh, two complete manual pulls, and a
+  complete real LaunchAgent catch-up pull;
+- step 6 passed: a live refresh rotated both tokens, persisted them owner-only, and a later process
+  completed another pull;
+- step 8 passed at the component boundary: all six records were read completely through the
+  read-only MCP and their bytes matched archive hashes;
+- step 5 remains open until WHOOP actually changes or late-syncs a record;
+- step 7 remains open because revocation would intentionally interrupt the now-running daily pool;
+- step 9 remains open until the parent Viventium agent binding is activated and evaluated.
+
+The public evidence records only scopes, counts, statuses, integrity results, and permission modes.
+It never records account identity, device identifiers, OAuth values, payloads, measurements, or
+owner-specific filesystem paths.
 
 ## Learnings to preserve
 

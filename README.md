@@ -19,11 +19,13 @@ device -> vendor app -> official vendor cloud API
 ## Status
 
 - Vision and contract: implemented
-- WHOOP connector: implemented and validated with synthetic localhost HTTP and the live official
-  OpenAPI/unauthenticated contract
+- WHOOP connector: implemented and validated against synthetic localhost HTTP, the live official
+  contract, and an owner-authorized WHOOP account
+- Real owner path: six authorized resource families captured in complete manual and scheduled runs;
+  rotating refresh and complete read-only MCP replay validated without publishing health values
 - Oura and other devices: documented expansion path; not implemented yet
-- Real owner OAuth/data validation: requires an owner-created WHOOP developer app and explicit OAuth
-  consent, so it cannot be claimed by synthetic tests
+- Remaining acceptance: observe a real late vendor correction, test explicit revocation, and complete
+  the parent Viventium cognitive-value A/B
 
 ## Install
 
@@ -110,9 +112,10 @@ owns the archive. Its three tools are `health_list_runs`, `health_list_records`,
 `health_read_record`. There is intentionally no model-facing authorization, network pull, delete,
 path, URL-fetch, or shell capability. Raw payload text is untrusted evidence, not instructions.
 
-This repository proves the MCP itself. Product-wide Viventium installation/configuration activation
-is a separate parent integration so this component stays independently testable and does not mutate
-an owner's live agent configuration during installation.
+This repository proves the MCP itself and records public-safe owner acceptance in `qa/reports/`.
+Product-wide Viventium installation/configuration activation stays in the parent repository so this
+component remains independently testable and does not mutate an owner's live agent configuration
+during installation.
 
 ## Verify
 

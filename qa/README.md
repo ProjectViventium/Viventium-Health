@@ -12,8 +12,8 @@ This folder owns public-safe acceptance for the raw health evidence bridge.
 - no health interpretation in connector code;
 - no secrets, personal health data, local paths, account IDs, or raw runtime dumps in reports.
 
-Automated localhost tests support acceptance. A real owner WHOOP path remains `BLOCKED` until an
-owner explicitly creates an app, grants OAuth access, syncs a real device, and exercises refresh,
-correction, restart, revoke, and read paths.
+Automated localhost tests support acceptance. The real owner WHOOP authorization, complete manual
+and scheduled pulls, rotating refresh across processes, archive integrity, and full MCP reads passed
+on 2026-07-27. Late correction, explicit revocation, and parent-agent cognitive A/B remain open.
 
-Latest run: [2026-07-26 WHOOP-first implementation QA](reports/2026-07-26-whoop-first-implementation-qa.md).
+Latest run: [2026-07-27 owner WHOOP acceptance](reports/2026-07-27-whoop-owner-acceptance.md).
