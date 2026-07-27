@@ -71,6 +71,12 @@ class FakeWhoopHandler(BaseHTTPRequestHandler):
                 "authorization": self.headers.get("Authorization"),
             }
         )
+        if self.response_mode == "unauthorized_once" and self.headers.get("Authorization") != "Bearer access-two":
+            self.send_json(401, b'{"error":"expired"}')
+            return
+        if self.response_mode == "invalid_control" and parsed.path.endswith("/cycle"):
+            self.send_json(200, b'{"records":')
+            return
         if self.response_mode == "retry_partial" and parsed.path.endswith("/recovery"):
             type(self).retry_count += 1
             if self.retry_count == 1:
@@ -89,6 +95,12 @@ class FakeWhoopHandler(BaseHTTPRequestHandler):
                 self.send_json(200, self.page_two, {"ETag": '"page-two"'})
             else:
                 self.send_json(200, self.page_one, {"ETag": '"page-one"'})
+            return
+        if parsed.path.endswith("/user/profile/basic"):
+            self.send_json(200, b'{"arbitrary_profile_field":"preserved"}')
+            return
+        if parsed.path.endswith("/user/measurement/body"):
+            self.send_json(200, b'{"arbitrary_body_field":"preserved"}')
             return
         self.send_json(404, b'{"error":"not_found"}')
 
@@ -238,6 +250,102 @@ class WhoopConnectorTests(unittest.TestCase):
             records = self.archive.list_records(provider="whoop", run_id=result.run_id, limit=20)
             self.assertEqual(sorted(record["status"] for record in records), [200, 403, 429, 503])
             self.assertEqual(sleeps, [0.0, 2.0])
+
+    def test_unauthorized_response_is_archived_then_refreshes_once(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "unauthorized_once"
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "expired-at-provider",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+            result = self.make_client(server).pull(start=NOW - timedelta(days=3), end=NOW)
+
+            self.assertEqual(result.status, "complete")
+            statuses = [
+                record["status"]
+                for record in self.archive.list_records(provider="whoop", run_id=result.run_id, limit=20)
+            ]
+            self.assertEqual(statuses.count(401), 1)
+            self.assertEqual(statuses.count(200), 2)
+            self.assertEqual(self.credentials.load_token()["refresh_token"], "refresh-two")
+
+    def test_invalid_pagination_control_and_network_failure_are_not_empty_data(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "invalid_control"
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+            invalid = self.make_client(server).pull(start=NOW - timedelta(days=3), end=NOW)
+            self.assertEqual(invalid.status, "failed")
+            self.assertEqual(invalid.resource_results["cycles"], "invalid_json_control")
+            invalid_record = self.archive.list_records(provider="whoop", run_id=invalid.run_id, limit=10)[0]
+            self.assertEqual(
+                self.archive.read_record(invalid_record["record_id"], max_bytes=100)["data"],
+                '{"records":',
+            )
+
+        sleeps: list[float] = []
+        network = WhoopClient(
+            archive=self.archive,
+            credentials=self.credentials,
+            api_base="http://127.0.0.1:1",
+            clock=lambda: NOW,
+            sleep=sleeps.append,
+            max_attempts=2,
+        ).pull(start=NOW - timedelta(days=3), end=NOW)
+        self.assertEqual(network.status, "failed")
+        self.assertTrue(network.resource_results["cycles"].startswith("network_"))
+        errors = self.archive.list_records(provider="whoop", run_id=network.run_id, limit=10)
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(all(record["status"] is None for record in errors))
+        self.assertEqual(sleeps, [1.0])
+
+    def test_profile_and_body_are_only_selected_when_their_scopes_are_granted(self) -> None:
+        with FakeWhoopServer() as server:
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:profile", "read:body_measurement"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "expires_in": 3600,
+                    "scope": "read:profile read:body_measurement",
+                },
+                obtained_at=NOW,
+            )
+            result = self.make_client(server).pull(start=NOW - timedelta(days=3), end=NOW)
+            self.assertEqual(
+                result.resource_results,
+                {"profile": "complete", "body_measurement": "complete"},
+            )
+            records = self.archive.list_records(provider="whoop", run_id=result.run_id, limit=10)
+            self.assertEqual({record["resource"] for record in records}, {"profile", "body_measurement"})
 
 
 if __name__ == "__main__":

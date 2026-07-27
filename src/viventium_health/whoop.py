@@ -17,11 +17,13 @@ from urllib.request import Request, urlopen
 from .archive import RawArchive, format_timestamp, utc_now
 from .auth import CredentialError, CredentialStore
 from .lock import PullLock
+from . import __version__
 
 
 WHOOP_AUTHORIZATION_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
 WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
 WHOOP_API_BASE = "https://api.prod.whoop.com"
+USER_AGENT = f"Viventium-Health/{__version__} (+https://github.com/ProjectViventium/Viventium-Health)"
 
 
 class WhoopError(RuntimeError):
@@ -143,7 +145,11 @@ class WhoopClient:
             self.token_endpoint,
             data=urlencode(form).encode("utf-8"),
             method="POST",
-            headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+                "User-Agent": USER_AGENT,
+            },
         )
         try:
             with self.opener(request, timeout=30) as response:
@@ -198,7 +204,11 @@ class WhoopClient:
         request = Request(
             f"{self.api_base}{path}?{urlencode(query)}" if query else f"{self.api_base}{path}",
             method="GET",
-            headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+                "User-Agent": USER_AGENT,
+            },
         )
         try:
             with self.opener(request, timeout=30) as response:
