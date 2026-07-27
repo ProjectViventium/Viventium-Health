@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# IDE / operating system
+.DS_Store
+.idea/
+.vscode/
+
+# Secrets and private health state
+.env
+.env.*
+!.env.example
+state/
+archive/
+credentials/
+tokens/
+*.token.json
+*.secret.json
+*.log
+
+# QA scratch and private captures
+qa/private/
+qa/artifacts/private/
