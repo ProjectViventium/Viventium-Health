@@ -130,5 +130,6 @@ python3 -m build
 - [Implementation specification](docs/SPEC.md)
 - [Raw append-only archive decision](docs/decisions/ADR-001-raw-append-only-file-archive.md)
 - [QA cases](qa/cases.md)
+- [Privacy policy](PRIVACY.md)
 
 See `qa/reports/` for dated, public-safe evidence of what was and was not actually exercised.
