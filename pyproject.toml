@@ -21,6 +21,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Documentation = "https://github.com/ProjectViventium/Viventium-Health#readme"
+Issues = "https://github.com/ProjectViventium/Viventium-Health/issues"
+Repository = "https://github.com/ProjectViventium/Viventium-Health"
+
 [project.scripts]
 viventium-health = "viventium_health.cli:main"
 

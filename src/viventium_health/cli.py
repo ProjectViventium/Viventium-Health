@@ -38,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     configure.add_argument("--scope", action="append", dest="scopes")
     connect = whoop_commands.add_parser("connect", help="Begin or complete WHOOP owner authorization")
     connect.add_argument("--callback-url", help="Final registered redirect URL containing code and state")
+    whoop_commands.add_parser("disconnect", help="Revoke WHOOP access and clear the local OAuth token")
 
     pull = commands.add_parser("pull", help="Append a provider correction-window pull")
     pull.add_argument("provider", choices=["whoop"])
@@ -91,6 +92,10 @@ def run(args: argparse.Namespace, *, stdout: TextIO, stderr: TextIO) -> int:
         if args.whoop_command == "configure":
             return _configure(args, store, stdout)
         client = WhoopClient(archive=archive, credentials=store)
+        if args.whoop_command == "disconnect":
+            client.revoke_access()
+            stdout.write("WHOOP access revoked and local OAuth token removed. Historical archives were retained.\n")
+            return 0
         if args.callback_url:
             client.complete_authorization(args.callback_url)
             stdout.write("WHOOP authorization completed; rotating token stored privately.\n")

@@ -14,10 +14,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
 
+from . import __version__
 from .archive import RawArchive, format_timestamp, utc_now
 from .auth import CredentialError, CredentialStore
 from .lock import PullLock
-from . import __version__
 
 
 WHOOP_AUTHORIZATION_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
@@ -192,6 +192,35 @@ class WhoopClient:
             raise CredentialError("WHOOP refresh response omitted the rotated refresh token")
         return self.credentials.save_token(token, obtained_at=self.clock())
 
+    def revoke_access(self) -> None:
+        """Revoke the current grant upstream, then clear only the local token."""
+
+        access_token = self._access_token()
+        request = Request(
+            f"{self.api_base}/developer/v2/user/access",
+            method="DELETE",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+                "User-Agent": USER_AGENT,
+            },
+        )
+        try:
+            with self.opener(request, timeout=30) as response:
+                status = int(response.status)
+                response.read()
+        except HTTPError as error:
+            try:
+                status = int(error.code)
+                error.read()
+            finally:
+                error.close()
+        except (URLError, TimeoutError, OSError) as error:
+            raise CredentialError(f"WHOOP revoke endpoint is unavailable ({type(error).__name__})") from None
+        if status != 204:
+            raise CredentialError(f"WHOOP revoke endpoint returned HTTP {status}; local token was retained")
+        self.credentials.clear_token()
+
     def _access_token(self, *, force_refresh: bool = False) -> str:
         if not force_refresh:
             fresh = self.credentials.access_token_if_fresh(now=self.clock())
@@ -226,6 +255,13 @@ class WhoopClient:
                 )
             finally:
                 error.close()
+
+    @staticmethod
+    def _content_type(headers: Mapping[str, str]) -> str:
+        for key, value in headers.items():
+            if key.lower() == "content-type":
+                return value
+        return ""
 
     def _retry_delay(self, response: _HttpResult, attempt: int) -> float:
         normalized = {key.lower(): value for key, value in response.headers.items()}
@@ -283,7 +319,7 @@ class WhoopClient:
                     resource=resource.name,
                     body=response.body,
                     status=response.status,
-                    content_type=response.headers.get("Content-Type", response.headers.get("content-type", "")),
+                    content_type=self._content_type(response.headers),
                     response_headers=response.headers,
                     request_path=resource.path,
                     request_query=query,

@@ -18,11 +18,111 @@ device -> vendor app -> official vendor cloud API
 
 ## Status
 
-- Vision and contract: accepted
-- WHOOP connector: implementation target for this repository
+- Vision and contract: implemented
+- WHOOP connector: implemented and validated with synthetic localhost HTTP and the live official
+  OpenAPI/unauthenticated contract
 - Oura and other devices: documented expansion path; not implemented yet
 - Real owner OAuth/data validation: requires an owner-created WHOOP developer app and explicit OAuth
   consent, so it cannot be claimed by synthetic tests
+
+## Install
+
+Python 3.10 or newer is the only runtime prerequisite. There are no runtime package dependencies.
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/viventium-health --version
+```
+
+Private state defaults to `~/Library/Application Support/Viventium/health`. Override it with the
+global `--root` option or `VIVENTIUM_HEALTH_HOME`; never point it into a git checkout.
+
+## Connect WHOOP
+
+Create an app in the [WHOOP Developer Dashboard](https://developer-dashboard.whoop.com/), register
+an exact HTTPS or custom-scheme redirect URI, then configure locally. The interactive form keeps the
+client secret out of command history and process listings:
+
+```bash
+viventium-health whoop configure
+viventium-health whoop connect
+```
+
+Open the printed official WHOOP URL. After granting access, copy the final redirect URL and complete
+the saved eight-character state/code exchange:
+
+```bash
+viventium-health whoop connect --callback-url '<exact-final-redirect-url>'
+viventium-health pull whoop --lookback-days 3
+```
+
+The default consent is the four continuous time-series resources plus `offline` for reliable daily
+refresh. Profile and body measurement are optional; request them explicitly during `configure` only
+if wanted. Every field and every page from each granted endpoint is retained exactly as returned.
+
+To disable the grant without deleting historical captures:
+
+```bash
+viventium-health schedule uninstall
+viventium-health whoop disconnect
+```
+
+## Daily pool
+
+On macOS, install the tested owner-level LaunchAgent explicitly:
+
+```bash
+viventium-health schedule install --provider whoop --hour 6 --minute 0 --lookback-days 3
+viventium-health schedule status
+```
+
+It runs once after load for catch-up and daily at the selected local time. The job contains a fixed
+executable and arguments, not OAuth values. On Linux or Windows, schedule the same idempotent `pull`
+command with the native scheduler.
+
+## Read and give an LLM access
+
+The operator CLI and MCP expose only bounded read operations:
+
+```bash
+viventium-health runs --provider whoop --limit 10
+viventium-health records --provider whoop --limit 50
+viventium-health read <opaque-record-id> --offset 0 --max-bytes 65536
+viventium-health mcp
+```
+
+A local MCP host can use:
+
+```yaml
+mcpServers:
+  viventium-health:
+    type: stdio
+    command: viventium-health
+    args:
+      - mcp
+    timeout: 120000
+    chatMenu: true
+```
+
+The host process must be able to resolve `viventium-health` and run under the same local user that
+owns the archive. Its three tools are `health_list_runs`, `health_list_records`, and
+`health_read_record`. There is intentionally no model-facing authorization, network pull, delete,
+path, URL-fetch, or shell capability. Raw payload text is untrusted evidence, not instructions.
+
+This repository proves the MCP itself. Product-wide Viventium installation/configuration activation
+is a separate parent integration so this component stays independently testable and does not mutate
+an owner's live agent configuration during installation.
+
+## Verify
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+VIVENTIUM_HEALTH_LIVE_CONTRACT=1 PYTHONPATH=src \
+  python3 -m unittest tests.test_whoop_live_contract -v
+python3 -m compileall -q src tests
+python3 -m build
+```
 
 ## Read first
 
@@ -31,5 +131,4 @@ device -> vendor app -> official vendor cloud API
 - [Raw append-only archive decision](docs/decisions/ADR-001-raw-append-only-file-archive.md)
 - [QA cases](qa/cases.md)
 
-The executable quick start will be added only after the test-first implementation satisfies the
-written contract.
+See `qa/reports/` for dated, public-safe evidence of what was and was not actually exercised.

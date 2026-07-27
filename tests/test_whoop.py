@@ -60,6 +60,20 @@ class FakeWhoopHandler(BaseHTTPRequestHandler):
         else:
             self.send_json(400, b'{"error":"invalid_grant"}')
 
+    def do_DELETE(self) -> None:
+        type(self).requests.append(
+            {
+                "method": "DELETE",
+                "path": self.path,
+                "authorization": self.headers.get("Authorization"),
+            }
+        )
+        if self.path == "/developer/v2/user/access" and self.headers.get("Authorization") == "Bearer current-access":
+            self.send_response(204)
+            self.end_headers()
+            return
+        self.send_json(401, b'{"error":"invalid_authorization"}')
+
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
@@ -346,6 +360,29 @@ class WhoopConnectorTests(unittest.TestCase):
             )
             records = self.archive.list_records(provider="whoop", run_id=result.run_id, limit=10)
             self.assertEqual({record["resource"] for record in records}, {"profile", "body_measurement"})
+
+    def test_disconnect_revokes_upstream_before_clearing_local_token(self) -> None:
+        with FakeWhoopServer() as server:
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+            self.make_client(server).revoke_access()
+            self.assertFalse((self.root / "secrets" / "whoop.token.json").exists())
+            revoke = [request for request in FakeWhoopHandler.requests if request["method"] == "DELETE"]
+            self.assertEqual(revoke[0]["path"], "/developer/v2/user/access")
+            self.assertEqual(revoke[0]["authorization"], "Bearer current-access")
 
 
 if __name__ == "__main__":

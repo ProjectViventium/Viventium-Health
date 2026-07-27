@@ -61,6 +61,7 @@ python3 -m venv .venv
 # Operator flow (implemented by this spec)
 viventium-health whoop configure
 viventium-health whoop connect
+viventium-health whoop disconnect
 viventium-health pull whoop --lookback-days 3
 viventium-health runs --provider whoop --limit 10
 viventium-health records --provider whoop --limit 50
@@ -72,7 +73,8 @@ viventium-health schedule uninstall
 ```
 
 `configure`, `connect`, and schedule mutation are explicit operator actions. The MCP server exposes
-only `health_list_runs`, `health_list_records`, and `health_read_record`.
+only `health_list_runs`, `health_list_records`, and `health_read_record`. `disconnect` revokes the
+grant upstream before removing the local token and never deletes historical evidence.
 
 ## Project structure
 
