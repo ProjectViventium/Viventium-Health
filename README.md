@@ -24,8 +24,9 @@ device -> vendor app -> official vendor cloud API
 - Real owner path: six authorized resource families captured in complete manual and scheduled runs;
   rotating refresh and complete read-only MCP replay validated without publishing health values
 - Oura and other devices: documented expansion path; not implemented yet
-- Remaining acceptance: observe a real late vendor correction, test explicit revocation, and complete
-  the parent Viventium cognitive-value A/B
+- Parent Viventium integration: live main-agent activation, post-restart MCP use, and a controlled
+  cognitive-value A/B passed without publishing private health content
+- Remaining acceptance: observe a real late vendor correction and test explicit revocation
 
 ## Install
 

@@ -1,7 +1,7 @@
 # Viventium-Health: vision, requirements, architecture, and learnings
 
-**Status:** WHOOP-first implementation and owner OAuth/data path validated; late-correction,
-revocation, and parent-agent cognitive A/B remain open
+**Status:** WHOOP-first implementation, owner OAuth/data path, and parent-agent cognitive A/B
+validated; late-correction and revocation remain open
 
 **Owner:** Project Viventium
 
@@ -219,8 +219,10 @@ Health payloads are sensitive private evidence even when a vendor calls them wel
 - Raw payload text is untrusted LLM evidence and cannot instruct the connector.
 - Disconnect/revoke and archive deletion are explicit operator actions; v1 does not silently expire
   or delete private evidence.
-- No raw health bytes enter Viventium saved memory, Feelings, ordinary prompt context, telemetry, or
-  public QA.
+- The connector never writes raw health bytes to Viventium saved memory, Feelings, telemetry, or
+  public QA. A bounded record chunk explicitly read for an agent request necessarily enters that
+  request's tool context and may inherit the host's ordinary conversation retention; it is not a
+  second canonical health store.
 
 Owner-only file permissions reduce accidental local exposure but are not full disk encryption. Full
 disk encryption and host account security remain deployment prerequisites. A future multi-user or
@@ -298,7 +300,9 @@ Owner acceptance progress on 2026-07-27:
   read-only MCP and their bytes matched archive hashes;
 - step 5 remains open until WHOOP actually changes or late-syncs a record;
 - step 7 remains open because revocation would intentionally interrupt the now-running daily pool;
-- step 9 remains open until the parent Viventium agent binding is activated and evaluated.
+- step 9 passed: after a real Viventium runtime restart, the main agent used bounded Health MCP
+  reads to produce a source- and capture-time-cited, uncertainty-aware, non-diagnostic planning
+  answer; the matched no-tool control correctly declined to infer current recovery.
 
 The public evidence records only scopes, counts, statuses, integrity results, and permission modes.
 It never records account identity, device identifiers, OAuth values, payloads, measurements, or

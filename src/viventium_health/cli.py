@@ -34,7 +34,6 @@ def build_parser() -> argparse.ArgumentParser:
     whoop_commands = whoop.add_subparsers(dest="whoop_command", required=True)
     configure = whoop_commands.add_parser("configure", help="Save an owner-only WHOOP OAuth client")
     configure.add_argument("--client-id")
-    configure.add_argument("--client-secret")
     configure.add_argument("--redirect-uri")
     configure.add_argument("--scope", action="append", dest="scopes")
     connect = whoop_commands.add_parser("connect", help="Begin or complete WHOOP owner authorization")
@@ -73,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _configure(args: argparse.Namespace, store: CredentialStore, stdout: TextIO) -> int:
     client_id = args.client_id or input("WHOOP client ID: ").strip()
-    client_secret = args.client_secret or getpass.getpass("WHOOP client secret: ").strip()
+    client_secret = getpass.getpass("WHOOP client secret: ").strip()
     redirect_uri = args.redirect_uri or input("WHOOP registered redirect URI: ").strip()
     scopes = args.scopes or list(DEFAULT_WHOOP_SCOPES)
     store.save_client(

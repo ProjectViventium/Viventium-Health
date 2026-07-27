@@ -5,8 +5,8 @@
 The owner-authorized WHOOP path is `PASS` for OAuth, full selected-resource capture, repeated pull,
 rotating refresh across processes, real macOS daily scheduling, private raw-file integrity, and full
 read-only MCP replay. `VH-014` remains `PARTIAL` because no actual late WHOOP correction was observed
-and the active grant was not intentionally revoked. `VH-015` remains `PARTIAL` pending the parent
-Viventium agent activation and cognitive answer-quality A/B.
+and the active grant was not intentionally revoked. `VH-015` is now `PASS` after live parent
+Viventium activation, restart persistence, and a controlled cognitive answer-quality A/B.
 
 No health payload, measurement, profile value, account identity, device ID, OAuth value, archive ID,
 or owner-specific path is included in this public report.
@@ -27,7 +27,7 @@ or owner-specific path is included in this public report.
 | MCP authority | No authorization, pull, network, path, write, delete, memory, or command tool exists | PASS |
 | Late correction | No real vendor correction occurred during the acceptance window | OPEN |
 | Revoke | Not run because it would intentionally break the active daily data pool | OPEN |
-| Parent cognitive A/B | Parent source integration implemented; live agent activation and answer-quality run not yet complete | PARTIAL |
+| Parent cognitive A/B | Live main-agent binding used bounded record reads; its evidence-enabled answer added useful planning guidance with provenance and uncertainty while the no-tool control made no unsupported claim | PASS |
 
 ## Requirement trace
 
@@ -37,8 +37,8 @@ or owner-specific path is included in this public report.
 - Reliable daily pool without additional services or fees: `PASS` on the owner macOS LaunchAgent.
 - Android/iOS owner parity: `PASS` for the connector boundary; the wristband syncs through WHOOP's
   mobile app and this host reads the authorized cloud API.
-- Bounded LLM consumption: `PASS` at the component MCP boundary; parent-agent usefulness remains
-  `PARTIAL`.
+- Bounded LLM consumption: `PASS` at both the component MCP boundary and the parent-agent usefulness
+  boundary.
 
 ## Remaining acceptance
 
@@ -46,5 +46,3 @@ or owner-specific path is included in this public report.
    the changed response without rewriting prior evidence.
 2. When interrupting the active feed is acceptable, revoke the grant, prove the next pull fails as
    auth rather than empty data, reconnect, and prove historical archives remain readable.
-3. Activate the four Viventium tool bindings and compare a health-relevant answer with and without
-   MCP evidence for relevance, provenance, uncertainty, non-diagnosis, and bounded retrieval.

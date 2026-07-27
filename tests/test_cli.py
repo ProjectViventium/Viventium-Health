@@ -6,7 +6,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
+
+from viventium_health.cli import build_parser, run
 
 
 class CliSubprocessTests(unittest.TestCase):
@@ -26,24 +30,43 @@ class CliSubprocessTests(unittest.TestCase):
     def test_configure_begin_connect_and_empty_inventory_are_safe(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "health"
-            configured = self.run_cli(
-                root,
-                "whoop",
-                "configure",
-                "--client-id",
-                "public-client",
-                "--client-secret",
-                "private-secret",
-                "--redirect-uri",
-                "https://example.com/callback",
-                "--scope",
-                "read:cycles",
-                "--scope",
-                "offline",
+            parser = build_parser()
+            configure_args = parser.parse_args(
+                [
+                    "--root",
+                    str(root),
+                    "whoop",
+                    "configure",
+                    "--client-id",
+                    "public-client",
+                    "--redirect-uri",
+                    "https://example.com/callback",
+                    "--scope",
+                    "read:cycles",
+                    "--scope",
+                    "offline",
+                ]
             )
-            self.assertEqual(configured.returncode, 0, configured.stderr)
-            self.assertNotIn("private-secret", configured.stdout + configured.stderr)
-            self.assertIn("read:cycles offline", configured.stdout)
+            configured_stdout = StringIO()
+            configured_stderr = StringIO()
+            with patch("viventium_health.cli.getpass.getpass", return_value="private-secret"):
+                self.assertEqual(
+                    run(configure_args, stdout=configured_stdout, stderr=configured_stderr),
+                    0,
+                )
+            self.assertNotIn("private-secret", configured_stdout.getvalue() + configured_stderr.getvalue())
+            self.assertIn("read:cycles offline", configured_stdout.getvalue())
+            with patch("sys.stderr", new=StringIO()), self.assertRaises(SystemExit):
+                parser.parse_args(
+                    [
+                        "--root",
+                        str(root),
+                        "whoop",
+                        "configure",
+                        "--client-secret",
+                        "would-leak-in-process-list",
+                    ]
+                )
 
             connect = self.run_cli(root, "whoop", "connect")
             self.assertEqual(connect.returncode, 0, connect.stderr)

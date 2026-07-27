@@ -21,8 +21,10 @@ directly between the owner's local Viventium-Health process and the provider's o
 
 Credentials and retrieved health data are stored on the owner's computer under the private local
 Viventium application-support directory. They are not committed to the public source repository or
-sent to a Viventium-Health-operated server. The owner controls any separate AI provider or system to
-which they choose to expose these local records.
+sent to a Viventium-Health-operated server. When an owner asks a connected AI to read a record, the
+selected bounded chunk enters that AI system's context and may be retained in its ordinary
+conversation/tool-result history under that system's privacy and retention policy. The owner
+controls any separate AI provider or host system to which they choose to expose these local records.
 
 ## Sharing, sale, and advertising
 

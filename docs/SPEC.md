@@ -245,7 +245,8 @@ record = archive.write_response(
 - Owner acceptance: real device/app/cloud sync, OAuth, daily repeat, late correction, restart,
   refresh rotation, revoke, and LLM read. OAuth, complete repeated pulls, rotating refresh across
   processes, real daily scheduling, and full MCP replay passed on 2026-07-27; late correction,
-  explicit revocation, and parent-agent answer-quality evaluation remain open.
+  explicit revocation remains open. Parent-agent activation, post-restart persistence, and a
+  controlled cognitive-value A/B passed on 2026-07-27.
 
 ## Boundaries
 
@@ -290,5 +291,6 @@ Never:
 
 - Observe a real WHOOP late sync/correction as a new immutable capture and test explicit revocation
   when interrupting the active daily pool is acceptable.
-- Complete the parent Viventium config/MCP activation and run the cognitive-value A/B. The owning
-  parent integration remains outside this isolated component.
+- Keep the parent Viventium config/MCP integration pinned to a reviewed component release. Its live
+  activation and cognitive-value A/B passed; the owning integration remains outside this isolated
+  component.
