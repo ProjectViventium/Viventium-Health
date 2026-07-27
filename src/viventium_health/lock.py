@@ -91,7 +91,7 @@ class PullLock:
                 pass
         self.acquired = False
 
-    def __enter__(self) -> "PullLock":
+    def __enter__(self) -> PullLock:  # noqa: PYI034 - Python 3.10 has no typing.Self.
         self.acquire()
         return self
 

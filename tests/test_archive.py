@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import stat
 import tempfile
 import unittest
@@ -10,7 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from viventium_health.archive import ArchiveError, RawArchive
-
 
 NOW = datetime(2026, 7, 26, 12, 34, 56, 123456, tzinfo=timezone.utc)
 

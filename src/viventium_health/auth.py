@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 import os
 import secrets
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 from urllib.parse import urlparse
 
 from .archive import format_timestamp, utc_now
-
 
 WHOOP_SCOPES = {
     "offline",

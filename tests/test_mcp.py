@@ -74,6 +74,7 @@ class McpSubprocessTests(unittest.TestCase):
                     "method": "tools/call",
                     "params": {"name": "health_read_record", "arguments": {"record_id": "../../private"}},
                 },
+                {"jsonrpc": "2.0", "method": "tools/list", "params": {}},
             ]
             environment = os.environ.copy()
             environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")

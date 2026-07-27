@@ -13,10 +13,8 @@ class PullLockTests(unittest.TestCase):
     def test_live_lock_fails_fast_and_release_is_owner_checked(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "locks" / "pull.lock"
-            with PullLock(path):
-                with self.assertRaises(LockBusyError):
-                    with PullLock(path):
-                        self.fail("a second live lock must not be acquired")
+            with PullLock(path), self.assertRaises(LockBusyError), PullLock(path):
+                self.fail("a second live lock must not be acquired")
             self.assertFalse(path.exists())
 
     def test_dead_process_lock_is_recovered(self) -> None:

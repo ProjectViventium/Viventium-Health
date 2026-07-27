@@ -8,7 +8,6 @@ from urllib.request import Request, urlopen
 
 from viventium_health.whoop import USER_AGENT, WHOOP_RESOURCES
 
-
 OPENAPI_URL = "https://api.prod.whoop.com/developer/doc/openapi.json"
 
 

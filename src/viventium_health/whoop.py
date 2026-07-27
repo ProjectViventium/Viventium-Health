@@ -7,9 +7,10 @@ import json
 import secrets
 import string
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Mapping
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -18,7 +19,6 @@ from . import __version__
 from .archive import RawArchive, format_timestamp, utc_now
 from .auth import CredentialError, CredentialStore
 from .lock import PullLock
-
 
 WHOOP_AUTHORIZATION_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
 WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"

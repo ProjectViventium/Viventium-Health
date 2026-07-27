@@ -6,9 +6,10 @@ import argparse
 import getpass
 import json
 import sys
+from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Sequence, TextIO
+from typing import Any, TextIO
 
 from . import __version__
 from .archive import ArchiveError, RawArchive, default_root, utc_now

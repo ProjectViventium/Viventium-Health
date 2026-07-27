@@ -8,11 +8,11 @@ import plistlib
 import secrets
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .auth import CredentialStore
-
 
 LABEL = "com.projectviventium.health.whoop"
 

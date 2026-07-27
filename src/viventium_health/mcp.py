@@ -9,7 +9,6 @@ from typing import Any, TextIO
 from . import __version__
 from .archive import ArchiveError, RawArchive
 
-
 PROTOCOL_VERSION = "2025-06-18"
 
 
@@ -149,7 +148,9 @@ def serve(archive: RawArchive, *, stdin: TextIO = sys.stdin, stdout: TextIO = sy
             else:
                 identifier = message.get("id")
                 method = message.get("method")
-                if method == "initialize":
+                if method == "notifications/initialized" or identifier is None:
+                    response = None
+                elif method == "initialize":
                     initialized = True
                     response = _rpc_result(
                         identifier,
@@ -159,10 +160,8 @@ def serve(archive: RawArchive, *, stdin: TextIO = sys.stdin, stdout: TextIO = sy
                             "serverInfo": {"name": "viventium-health", "version": __version__},
                         },
                     )
-                elif method == "notifications/initialized":
-                    response = None
                 elif method == "ping":
-                    response = _rpc_result(identifier, {}) if identifier is not None else None
+                    response = _rpc_result(identifier, {})
                 elif not initialized:
                     response = _rpc_error(identifier, -32002, "Server not initialized")
                 elif method == "tools/list":

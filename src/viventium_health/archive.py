@@ -8,11 +8,11 @@ import json
 import os
 import re
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
-
+from typing import Any
 
 MAX_READ_BYTES = 1024 * 1024
 _OPAQUE_ID = re.compile(r"^[0-9a-f]{32}$")

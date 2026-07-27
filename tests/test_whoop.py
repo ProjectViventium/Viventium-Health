@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import stat
 import tempfile
 import threading
@@ -9,18 +8,18 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from viventium_health.archive import RawArchive
 from viventium_health.auth import CredentialStore
 from viventium_health.whoop import WhoopClient
 
-
 NOW = datetime(2026, 7, 26, 12, 0, 0, tzinfo=timezone.utc)
 
 
 class FakeWhoopHandler(BaseHTTPRequestHandler):
-    requests: list[dict[str, object]] = []
+    requests: ClassVar[list[dict[str, object]]] = []
     response_mode = "normal"
     retry_count = 0
 
