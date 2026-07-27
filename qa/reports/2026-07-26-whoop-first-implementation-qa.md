@@ -12,7 +12,7 @@ by the accepted isolation boundary.
 
 - Public-safe synthetic data only
 - macOS arm64 host
-- Python 3.14.6; package declares and uses Python 3.10-compatible features
+- Python 3.14.6 and the declared minimum Python 3.10.20
 - Python standard library only at runtime
 - WHOOP official production OpenAPI and one unauthenticated production request
 - No browser UI exists in this component, so Playwright/browser QA is not applicable
@@ -22,7 +22,7 @@ by the accepted isolation boundary.
 
 | Gate | Actual execution | Result |
 | --- | --- | --- |
-| Automated suite | `PYTHONWARNINGS=error PYTHONPATH=src python3 -m unittest discover -s tests -v` | 16 passed, 2 expected live tests skipped, 0 failed |
+| Automated suite | Warning-as-error suite on Python 3.14.6 and 3.10.20 | Each: 16 passed, 2 expected live tests skipped, 0 failed |
 | Live WHOOP contract | Live-gated OpenAPI/path/scope/paging and missing-bearer tests | 2 passed, 0 failed |
 | Exact/archive flow | Exact bytes/hash, immutable repeat, run receipts, network errors, paging | PASS |
 | OAuth flow | Localhost token exchange, eight-character state, rotating refresh, 401 refresh, revoke | PASS |
@@ -30,6 +30,7 @@ by the accepted isolation boundary.
 | MCP subprocess | Initialize, initialized notification, tool list, record list/read, invalid ID, stdout purity | PASS |
 | Wheel build/install | Isolated sdist/wheel build, no-dependency wheel install, version, empty CLI | PASS; 15 wheel members, 9 required runtime modules present |
 | Installed artifact loop | Installed CLI list/read and installed stdio MCP over synthetic archive | PASS; one record, complete read, three MCP responses, zero stderr bytes |
+| Fresh-clone minimum-runtime loop | Local clean clone, Python 3.10 suite/compile/build/install/CLI/MCP/public scan | PASS |
 | Real LaunchAgent loop | Installed package, synthetic invalid grant, real `launchctl` bootstrap/RunAtLoad/status/bootout | PASS; job loaded, ran, classified auth-refresh failure, and was fully removed |
 | Static lint | Ruff over `src` and `tests` | PASS after mechanical import/typing cleanup |
 | Security scan | Bandit over runtime source | 0 medium/high; two reviewed low findings: fixed-argument `launchctl` subprocess use and official token URL mistaken for a password |
@@ -69,6 +70,11 @@ were complete. Claude Desktop showed the requested Opus 5 / highest-effort contr
 at its usage limit, so no independent-model verdict was produced. This is recorded as unavailable
 supporting evidence, not a pass. Static, security, protocol, installed-artifact, live-contract, and
 real-scheduler reviews were completed independently within the primary QA pass.
+
+The requested `ProjectViventium/Viventium-Health` GitHub repository could not be created because the
+active authenticated account lacks organization repository-creation permission. No alternate-owner
+repository was created and nothing was pushed. The local independent repository and public-safety
+review are ready for the organization owner to create the empty destination.
 
 ## Remaining gates
 
