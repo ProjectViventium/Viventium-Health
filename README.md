@@ -57,8 +57,22 @@ the saved eight-character state/code exchange:
 
 ```bash
 viventium-health whoop connect --callback-url '<exact-final-redirect-url>'
+viventium-health pull whoop --all-history
+```
+
+`--all-history` retrieves all available history exposed by WHOOP's six official v2 read resources.
+It leaves the collection start filter open and follows pagination through a fixed current capture
+time. A 1,000-page safety cap applies per resource; reaching it fails the run explicitly instead of
+claiming completion. Use this command once after connection. Daily operation stays on the small
+correction window:
+
+```bash
 viventium-health pull whoop --lookback-days 3
 ```
+
+The full-history pull can run for several minutes because it honors WHOOP's published request
+limits. Do not start it while the daily LaunchAgent is pulling; a concurrent scheduled pull fails
+fast and can catch up on its next run.
 
 The default consent is the four continuous time-series resources plus `offline` for reliable daily
 refresh. Profile and body measurement are optional; request them explicitly during `configure` only

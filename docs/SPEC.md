@@ -62,6 +62,7 @@ python3 -m venv .venv
 viventium-health whoop configure
 viventium-health whoop connect
 viventium-health whoop disconnect
+viventium-health pull whoop --all-history
 viventium-health pull whoop --lookback-days 3
 viventium-health runs --provider whoop --limit 10
 viventium-health records --provider whoop --limit 50
@@ -181,14 +182,26 @@ in full without field filtering.
   attempt before retry or failure classification.
 - Network failures create metadata-only attempt receipts with the error class and no fabricated body.
 - 429 and 5xx are retried a bounded number of times, honoring a bounded `Retry-After` or
-  `X-RateLimit-Reset` delay.
-- 401 after a proactive refresh receives one refresh-and-retry cycle; it never loops.
+  `X-RateLimit-Reset` delay. WHOOP defines `X-RateLimit-Reset` as seconds until reset; it is used
+  only for 429 responses and is not interpreted as an epoch timestamp. A headerless 429 waits one
+  minute before the next bounded attempt, while 5xx retains short exponential retry.
+- A collection pauses before its next page when WHOOP reports no remaining minute-window requests.
+- Each page may receive one 401 refresh-and-retry cycle; repeated 401 on the same page fails instead
+  of looping, while a later page may refresh a newly expired token again.
 - Refresh-token rotation is serialized by the pull lock and persisted atomically before another
   request may use it.
 - One active pull per state root is allowed. A live lock fails fast; a stale dead-process lock is
   recoverable and documented.
 - A partial run is not “no data.” The finished receipt names successful, failed, and incomplete
   resources and the CLI exits non-zero when any selected resource is incomplete.
+- `--all-history` and `--lookback-days` are mutually exclusive. The all-history request omits only
+  the collection `start` filter, keeps a fixed current `end`, follows every `next_token`, and records
+  `requested_start: null` so the open boundary is explicit rather than fabricated.
+- Pagination remains bounded at 1,000 pages per resource (25,000 records at WHOOP's current maximum
+  page size). Reaching that cap returns `pagination_limit` and a non-zero CLI status. `record_count`
+  is the exact number of archived response/error records for the run and does not share list limits.
+- An omitted, null, or empty `next_token` completes a collection exactly as WHOOP's pagination
+  contract specifies; non-string and repeated non-empty tokens remain explicit failures.
 
 ## LLM consumption contract
 

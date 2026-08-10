@@ -271,28 +271,52 @@ class WhoopClient:
                 return min(60.0, max(0.0, float(retry_after)))
             except ValueError:
                 pass
-        reset = normalized.get("x-ratelimit-reset")
-        if reset is not None:
-            try:
-                return min(60.0, max(0.0, float(reset) - self.clock().timestamp()))
-            except ValueError:
-                pass
+        if response.status == 429:
+            reset = normalized.get("x-ratelimit-reset")
+            if reset is not None:
+                try:
+                    # WHOOP documents this header as seconds until reset, not an epoch timestamp.
+                    # https://developer.whoop.com/docs/developing/rate-limiting/
+                    return min(60.0, max(0.0, float(reset)))
+                except ValueError:
+                    pass
+            return 60.0
         return min(30.0, float(2 ** (attempt - 1)))
 
-    def _pull_resource(self, run: Any, resource: WhoopResource, start: datetime, end: datetime) -> str:
+    def _proactive_rate_limit_delay(self, response: _HttpResult) -> float:
+        normalized = {key.lower(): value for key, value in response.headers.items()}
+        try:
+            remaining = int(normalized.get("x-ratelimit-remaining", ""))
+        except ValueError:
+            return 0.0
+        if remaining > 0:
+            return 0.0
+        try:
+            return min(60.0, max(0.0, float(normalized.get("x-ratelimit-reset", "60"))))
+        except ValueError:
+            return 60.0
+
+    def _pull_resource(
+        self,
+        run: Any,
+        resource: WhoopResource,
+        start: datetime | None,
+        end: datetime,
+    ) -> str:
         page = 1
         next_token: str | None = None
         seen_tokens: set[str] = set()
-        access_token = self._access_token()
-        refreshed_after_401 = False
         while True:
+            access_token = self._access_token()
+            refreshed_after_401 = False
             query: dict[str, Any] = {}
             if resource.collection:
                 query = {
-                    "start": format_timestamp(start),
                     "end": format_timestamp(end),
                     "limit": 25,
                 }
+                if start is not None:
+                    query["start"] = format_timestamp(start)
                 if next_token is not None:
                     query["nextToken"] = next_token
             response: _HttpResult | None = None
@@ -351,14 +375,17 @@ class WhoopClient:
             if not isinstance(control, dict):
                 return "invalid_json_control"
             candidate = control.get("next_token")
-            if candidate is None:
+            if candidate is None or candidate == "":
                 return "complete"
-            if not isinstance(candidate, str) or not candidate:
+            if not isinstance(candidate, str):
                 return "invalid_next_token"
             if candidate in seen_tokens:
                 return "repeated_next_token"
             seen_tokens.add(candidate)
             next_token = candidate
+            delay = self._proactive_rate_limit_delay(response)
+            if delay > 0:
+                self.sleep(delay)
             page += 1
             if page > 1000:
                 return "pagination_limit"
@@ -373,10 +400,10 @@ class WhoopClient:
             granted = set(client["scopes"])
         return [resource for resource in WHOOP_RESOURCES if resource.scope in granted]
 
-    def pull(self, *, start: datetime, end: datetime) -> PullResult:
-        if start.tzinfo is None or end.tzinfo is None:
+    def pull(self, *, start: datetime | None, end: datetime) -> PullResult:
+        if (start is not None and start.tzinfo is None) or end.tzinfo is None:
             raise WhoopError("pull timestamps must be timezone-aware")
-        if start >= end:
+        if start is not None and start >= end:
             raise WhoopError("pull start must be before end")
         resources = self._selected_resources()
         if not resources:
@@ -384,7 +411,7 @@ class WhoopClient:
         with PullLock(self.archive.locks_root / "whoop.pull.lock"):
             run = self.archive.start_run(
                 provider="whoop",
-                requested_start=format_timestamp(start),
+                requested_start=format_timestamp(start) if start is not None else None,
                 requested_end=format_timestamp(end),
                 resources=[resource.name for resource in resources],
                 started_at=self.clock(),
@@ -408,10 +435,9 @@ class WhoopClient:
                 resource_results=results,
                 finished_at=self.clock(),
             )
-            records = self.archive.list_records(provider="whoop", run_id=run.run_id, limit=1000)
             return PullResult(
                 run_id=run.run_id,
                 status=status,
                 resource_results=results,
-                record_count=len(records),
+                record_count=self.archive.count_run_records(run),
             )

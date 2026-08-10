@@ -36,6 +36,7 @@ class LiveWhoopContractTests(unittest.TestCase):
             if resource.collection:
                 parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
                 self.assertTrue({"start", "end", "limit", "nextToken"} <= set(parameters))
+                self.assertFalse(parameters["start"].get("required", False))
                 self.assertEqual(parameters["limit"]["schema"]["maximum"], 25)
 
     def test_unauthenticated_live_collection_fails_closed(self) -> None:

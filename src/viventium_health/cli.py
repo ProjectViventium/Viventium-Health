@@ -40,9 +40,15 @@ def build_parser() -> argparse.ArgumentParser:
     connect.add_argument("--callback-url", help="Final registered redirect URL containing code and state")
     whoop_commands.add_parser("disconnect", help="Revoke WHOOP access and clear the local OAuth token")
 
-    pull = commands.add_parser("pull", help="Append a provider correction-window pull")
+    pull = commands.add_parser("pull", help="Append a provider pull")
     pull.add_argument("provider", choices=["whoop"])
-    pull.add_argument("--lookback-days", type=int, default=3)
+    pull_window = pull.add_mutually_exclusive_group()
+    pull_window.add_argument("--lookback-days", type=int, default=3)
+    pull_window.add_argument(
+        "--all-history",
+        action="store_true",
+        help="Pull every available collection page through the current time",
+    )
 
     runs = commands.add_parser("runs", help="List capture runs")
     runs.add_argument("--provider")
@@ -105,11 +111,12 @@ def run(args: argparse.Namespace, *, stdout: TextIO, stderr: TextIO) -> int:
             stdout.write(url + "\n")
         return 0
     if args.command == "pull":
-        if not 1 <= args.lookback_days <= 365:
+        if not args.all_history and not 1 <= args.lookback_days <= 365:
             raise WhoopError("lookback days must be between 1 and 365")
         end = utc_now()
+        start = None if args.all_history else end - timedelta(days=args.lookback_days)
         client = WhoopClient(archive=archive, credentials=store)
-        result = client.pull(start=end - timedelta(days=args.lookback_days), end=end)
+        result = client.pull(start=start, end=end)
         _json(
             {
                 "run_id": result.run_id,

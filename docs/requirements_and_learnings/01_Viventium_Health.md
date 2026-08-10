@@ -104,10 +104,12 @@ Current official facts verified on 2026-07-26:
   serialized and atomic.
 - Official read scopes are cycles, recovery, sleep, workout, profile, and body measurement.
 - WHOOP instructs apps to limit requested scopes to those actually used.
+- Collection `start` and `end` query parameters are optional; omitting `start` applies no minimum
+  time filter, while a supplied `end` fixes the upper capture boundary.
 - Cycle, recovery, sleep, and workout collections use `records`, `next_token`, and request
-  `nextToken`; all pages must be followed until the token is absent.
+  `nextToken`; an absent or empty token completes pagination.
 - Default published limits are 100 requests/minute and 10,000/day. HTTP 429 and rate-limit headers
-  make throttling observable.
+  make throttling observable, and `X-RateLimit-Reset` is seconds until the active window resets.
 - Development apps can begin with a small member cap before approval; there is no ordinary public
   synthetic user-data sandbox.
 
@@ -133,8 +135,12 @@ code change.
 ### Polling decision
 
 Start with one daily pull over the previous three days. This catches common late sync and corrections
-with tiny request volume. Initial connection may request a configurable 30-day backfill. Every run
-walks every collection page and captures singleton resources only when their scopes are granted.
+with tiny request volume. Initial connection may request all available history exposed through the
+six official v2 read resources: collection requests omit the minimum-time filter, retain a fixed
+current end boundary, and follow pagination until provider completion or the explicit 1,000-page
+per-resource safety cap. Every run captures singleton resources only when their scopes are granted.
+Long pulls proactively pause when the current minute budget is empty, use a one-minute fallback for
+headerless 429 responses, and can rotate an expired token again on a later page.
 
 Webhooks are deferred because they add a public HTTPS receiver, signature verification, duplicate
 handling, and reconciliation while still omitting cycle/body events. Daily overlap is the smallest
@@ -249,8 +255,8 @@ The reader must make operational ambiguity impossible:
 
 ## Natural use cases
 
-- First connection: owner creates a WHOOP developer app, grants selected scopes, and runs a bounded
-  backfill.
+- First connection: owner creates a WHOOP developer app, grants selected scopes, and runs the
+  explicit all-history pull once; daily pulls remain bounded correction windows.
 - Daily pool: scheduler pulls the previous three days and appends every response/page.
 - Late sync: device data appears after the first pull and is captured by a later overlapping run.
 - Correction: vendor changes a sleep/recovery/workout; both old and new raw responses survive.

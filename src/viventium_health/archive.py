@@ -152,7 +152,7 @@ class RawArchive:
         self,
         *,
         provider: str,
-        requested_start: str,
+        requested_start: str | None,
         requested_end: str,
         resources: list[str],
         started_at: datetime | None = None,
@@ -285,6 +285,22 @@ class RawArchive:
         }
         self._write_new(run.path / "run.finished.json", _json_bytes(receipt))
         return receipt
+
+    def count_run_records(self, run: RunHandle) -> int:
+        """Return the exact number of response/error records in one run."""
+
+        try:
+            run_path = run.path.resolve(strict=True)
+            archive_root = self.archive_root.resolve(strict=True)
+        except OSError as error:
+            raise ArchiveError("run archive is unavailable") from error
+        if archive_root not in run_path.parents:
+            raise ArchiveError("run archive escapes the health root")
+        return sum(
+            1
+            for path in run_path.iterdir()
+            if path.is_file() and (path.name.endswith(".meta.json") or path.name.endswith(".error.json"))
+        )
 
     def list_runs(self, *, provider: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         if provider is not None:

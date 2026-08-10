@@ -6,8 +6,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from viventium_health.cli import build_parser, run
@@ -81,6 +83,38 @@ class CliSubprocessTests(unittest.TestCase):
             self.assertNotEqual(missing_pull.returncode, 0)
             self.assertIn("OAuth token is not configured", missing_pull.stderr)
             self.assertNotIn("private-secret", missing_pull.stdout + missing_pull.stderr)
+
+
+class CliPullWindowTests(unittest.TestCase):
+    def test_all_history_uses_an_open_start_window(self) -> None:
+        now = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
+        parser = build_parser()
+        args = parser.parse_args(["--root", "/tmp/health", "pull", "whoop", "--all-history"])
+        stdout = StringIO()
+
+        with (
+            patch("viventium_health.cli.utc_now", return_value=now),
+            patch("viventium_health.cli.WhoopClient") as client_class,
+        ):
+            client_class.return_value.pull.return_value = SimpleNamespace(
+                run_id="synthetic-run",
+                status="complete",
+                resource_results={"cycles": "complete"},
+                record_count=1,
+            )
+
+            self.assertEqual(run(args, stdout=stdout, stderr=StringIO()), 0)
+
+        client_class.return_value.pull.assert_called_once_with(start=None, end=now)
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "complete")
+
+    def test_all_history_and_lookback_are_mutually_exclusive(self) -> None:
+        parser = build_parser()
+
+        with patch("sys.stderr", new=StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(
+                ["--root", "/tmp/health", "pull", "whoop", "--all-history", "--lookback-days", "30"]
+            )
 
 
 if __name__ == "__main__":

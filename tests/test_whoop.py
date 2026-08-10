@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from viventium_health.archive import RawArchive
@@ -54,6 +55,12 @@ class FakeWhoopHandler(BaseHTTPRequestHandler):
             self.send_json(
                 200,
                 b'{"access_token":"access-two","refresh_token":"refresh-two","expires_in":7200,'
+                b'"token_type":"bearer","scope":"read:cycles offline"}',
+            )
+        elif form.get("grant_type") == ["refresh_token"] and form.get("refresh_token") == ["refresh-two"]:
+            self.send_json(
+                200,
+                b'{"access_token":"access-three","refresh_token":"refresh-three","expires_in":7200,'
                 b'"token_type":"bearer","scope":"read:cycles offline"}',
             )
         else:
@@ -102,6 +109,45 @@ class FakeWhoopHandler(BaseHTTPRequestHandler):
             return
         if self.response_mode == "retry_partial" and parsed.path.endswith("/activity/sleep"):
             self.send_json(403, b'{"error":"missing_scope"}')
+            return
+        if self.response_mode == "headerless_rate_limit" and parsed.path.endswith("/cycle"):
+            type(self).retry_count += 1
+            if self.retry_count <= 2:
+                self.send_json(429, b'{"error":"slow"}')
+                return
+        if self.response_mode == "rate_limit_reset" and parsed.path.endswith("/cycle"):
+            type(self).retry_count += 1
+            if self.retry_count == 1:
+                self.send_json(429, b'{"error":"slow"}', {"X-RateLimit-Reset": "3"})
+                return
+        if self.response_mode == "server_error_with_rate_header" and parsed.path.endswith("/cycle"):
+            type(self).retry_count += 1
+            if self.retry_count == 1:
+                self.send_json(503, b'{"error":"temporary"}', {"X-RateLimit-Reset": "58"})
+                return
+        if self.response_mode == "proactive_rate_limit" and parsed.path.endswith("/cycle"):
+            if query.get("nextToken") == ["private-page-2"]:
+                self.send_json(200, self.page_two)
+            else:
+                self.send_json(
+                    200,
+                    self.page_one,
+                    {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "3"},
+                )
+            return
+        if self.response_mode == "two_expirations" and parsed.path.endswith("/cycle"):
+            if query.get("nextToken") == ["private-page-2"]:
+                if self.headers.get("Authorization") != "Bearer access-three":
+                    self.send_json(401, b'{"error":"expired_again"}')
+                else:
+                    self.send_json(200, self.page_two)
+            elif self.headers.get("Authorization") != "Bearer access-two":
+                self.send_json(401, b'{"error":"expired"}')
+            else:
+                self.send_json(200, self.page_one)
+            return
+        if self.response_mode == "empty_next_token" and parsed.path.endswith("/cycle"):
+            self.send_json(200, b'{"records":[],"next_token":""}')
             return
         if parsed.path.endswith("/cycle"):
             if query.get("nextToken") == ["private-page-2"]:
@@ -233,6 +279,210 @@ class WhoopConnectorTests(unittest.TestCase):
             gets = [request for request in FakeWhoopHandler.requests if request["method"] == "GET"]
             self.assertEqual(gets[0]["authorization"], "Bearer current-access")
             self.assertEqual(gets[1]["query"]["nextToken"], ["private-page-2"])
+
+    def test_all_history_omits_the_start_filter_and_records_the_open_window(self) -> None:
+        with FakeWhoopServer() as server:
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                    "token_type": "bearer",
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server).pull(start=None, end=NOW)
+
+            self.assertEqual(result.status, "complete")
+            gets = [request for request in FakeWhoopHandler.requests if request["method"] == "GET"]
+            self.assertTrue(gets)
+            self.assertTrue(all("start" not in request["query"] for request in gets))
+            self.assertTrue(all(request["query"]["end"] == ["2026-07-26T12:00:00.000000Z"] for request in gets))
+            run = self.archive.list_runs(provider="whoop", limit=1)[0]
+            self.assertIsNone(run["requested_start"])
+            self.assertEqual(run["requested_end"], "2026-07-26T12:00:00.000000Z")
+
+    def test_rate_limit_reset_header_is_wait_seconds_not_an_epoch_timestamp(self) -> None:
+        sleeps: list[float] = []
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "rate_limit_reset"
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server, sleep=sleeps.append).pull(
+                start=NOW - timedelta(days=3),
+                end=NOW,
+            )
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(sleeps, [3.0])
+
+    def test_headerless_rate_limit_uses_a_minute_window_fallback(self) -> None:
+        sleeps: list[float] = []
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "headerless_rate_limit"
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server, sleep=sleeps.append).pull(start=None, end=NOW)
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(sleeps, [60.0, 60.0])
+
+    def test_rate_limit_reset_header_does_not_delay_server_error_retry(self) -> None:
+        sleeps: list[float] = []
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "server_error_with_rate_header"
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server, sleep=sleeps.append).pull(start=None, end=NOW)
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(sleeps, [1.0])
+
+    def test_collection_waits_before_next_page_when_minute_budget_is_empty(self) -> None:
+        sleeps: list[float] = []
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "proactive_rate_limit"
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server, sleep=sleeps.append).pull(start=None, end=NOW)
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(sleeps, [3.0])
+
+    def test_long_collection_can_refresh_once_on_more_than_one_page(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "two_expirations"
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server).pull(start=None, end=NOW)
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(self.credentials.load_token()["refresh_token"], "refresh-three")
+
+    def test_result_uses_exact_archive_record_count_without_listing_cap(self) -> None:
+        with FakeWhoopServer() as server:
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+
+            with patch.object(self.archive, "count_run_records", return_value=1005):
+                result = self.make_client(server).pull(start=None, end=NOW)
+
+            self.assertEqual(result.record_count, 1005)
+
+    def test_empty_next_token_marks_collection_pagination_complete(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "empty_next_token"
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=["read:cycles", "offline"],
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": "read:cycles offline",
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server).pull(start=None, end=NOW)
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(result.resource_results, {"cycles": "complete"})
 
     def test_retry_responses_and_partial_scope_failure_remain_visible(self) -> None:
         sleeps: list[float] = []

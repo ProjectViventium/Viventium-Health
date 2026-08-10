@@ -19,6 +19,7 @@
 | `VH-013` | Package/user flow | A fresh environment can install and use the component. | wheel/CLI | Build, isolated install, help, empty state, fake pull, list, read, MCP all work. | PASS — 2026-07-26 |
 | `VH-014` | Real owner WHOOP acceptance | Actual device data reaches the LLM evidence pool reliably. | WHOOP app/cloud/OAuth/CLI/MCP | Sync, backfill, overlap, correction, refresh/restart, revoke, and full read all pass. | PARTIAL — OAuth, repeated/scheduled pull, rotation/restart, integrity, full MCP read PASS 2026-07-27; correction/revoke open |
 | `VH-015` | Cognitive value | More raw data improves judgment, not just detail. | Viventium agent | A/B answer is more useful and evidence-cited, remains non-diagnostic, and retrieves only when relevant. | PASS — 2026-07-27; real browser A/B after runtime restart |
+| `VH-016` | Complete initial history and rate-limit timing | First connection can retrieve the provider's available API history without an invented earliest date. | WHOOP/CLI | `--all-history` omits optional `start`, fixes `end`, accepts empty pagination completion, proactively throttles, retries headerless 429 by minute, refreshes on later pages, reports an exact count, and fails explicitly at the safety cap. | PASS-AUTOMATED — 2026-08-10; live owner run pending OAuth |
 
 ## Natural user-use-case checklist
 
@@ -26,7 +27,7 @@
 | --- | --- | --- |
 | First run with no config | `VH-006`, `VH-013` | Clear setup action; no files falsely presented as data. |
 | Configure and connect WHOOP | `VH-004`, `VH-005`, `VH-014` | Exact scopes and redirect are visible before consent; token stays private. |
-| Initial backfill | `VH-001`–`VH-004`, `VH-007` | Every selected resource/page is captured once per attempt with an honest run receipt. |
+| Initial backfill | `VH-001`–`VH-004`, `VH-007`, `VH-016` | Every selected resource/page through the fixed capture time is captured once per attempt with an honest open-start run receipt. |
 | Normal daily pull | `VH-002`, `VH-005`, `VH-011` | Three-day overlap appends a new complete run with no operator work. |
 | Late phone sync/correction | `VH-002`, `VH-014` | Later raw response is retained beside earlier evidence; nothing is overwritten. |
 | Missing/revoked auth | `VH-005`, `VH-006` | Explicit auth blocker; old archive remains readable. |
