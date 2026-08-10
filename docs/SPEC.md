@@ -16,12 +16,16 @@ module after documenting the vision and requirements.
    and corrections without requiring a public callback service.
 6. Private runtime state is outside the git checkout. No health record or credential is a fixture.
 7. The public repository is source-available under the Project Viventium licensing posture.
+8. “Complete WHOOP coverage” means all documented API reads plus exact official exports and explicit
+   image evidence for app-only views; it never implies undocumented private API access.
 
 ## Objective
 
 Build a small, dependable module that:
 
 - authorizes one WHOOP owner through the official OAuth 2.0 flow;
+- completes authorization, all-history backfill, and native daily correction setup from one
+  product onboarding flow;
 - pulls every configured official WHOOP resource and every collection page;
 - stores each HTTP response body byte-for-byte with capture time, request facts, status, selected
   response headers, length, and SHA-256 in a separate immutable metadata sidecar;
@@ -29,13 +33,15 @@ Build a small, dependable module that:
 - exposes a provider-neutral, read-only, paged CLI and stdio MCP surface for LLM consumption;
 - can add Oura or another source by adding an adapter, without changing the archive or reader;
 - requires no database, hosted service, aggregator, subscription, or non-standard runtime library.
+- preserves the official WHOOP ZIP and its files exactly, and preserves bounded PNG/JPEG screenshots
+  as separately labeled unstructured evidence that MCP can return as images.
 
 ## Non-goals
 
 - health recommendations, diagnoses, alerts, thresholds, baselines, trends, correlations, or scores;
 - a normalized observation model or cross-vendor field mapping;
 - saved-memory writes, RAG ingestion, embeddings, dashboards, mobile apps, or browser scraping;
-- a public HTTP service, webhooks, multi-user tenancy, or commercial aggregator;
+- a public HTTP service, webhooks, per-LibreChat-user tenancy, or commercial aggregator;
 - pretending an API pull can retrieve data that the wearable has not yet synced upstream.
 
 ## Tech stack
@@ -61,7 +67,11 @@ python3 -m venv .venv
 # Operator flow (implemented by this spec)
 viventium-health whoop configure
 viventium-health whoop connect
+viventium-health whoop onboard --callback-stdin
+viventium-health whoop status
 viventium-health whoop disconnect
+viventium-health import whoop-export --input <zip>
+viventium-health import whoop-evidence --stdin --media-type image/png
 viventium-health pull whoop --all-history
 viventium-health pull whoop --lookback-days 3
 viventium-health runs --provider whoop --limit 10
@@ -73,8 +83,9 @@ viventium-health schedule status
 viventium-health schedule uninstall
 ```
 
-`configure`, `connect`, and schedule mutation are explicit operator actions. The MCP server exposes
-only `health_list_runs`, `health_list_records`, and `health_read_record`. `disconnect` revokes the
+`configure`, `connect`, import, and schedule mutation are explicit owner actions. The MCP server
+exposes only `health_list_runs`, `health_list_records`, `health_read_record`, and
+`health_read_image`. `disconnect` revokes the
 grant upstream before removing the local token and never deletes historical evidence.
 
 ## Project structure
@@ -84,6 +95,9 @@ src/viventium_health/
   archive.py       exact-byte append-only archive and read index
   auth.py          owner-only OAuth client/token files
   whoop.py         official WHOOP URLs, resources, OAuth, paging, retry
+  importer.py      bounded exact official WHOOP ZIP preservation
+  evidence.py      bounded exact PNG/JPEG manual-evidence preservation
+  status.py        secret-free onboarding, coverage, and correction status
   mcp.py           read-only stdio JSON-RPC/MCP adapter
   schedule.py      macOS user LaunchAgent generation and status
   cli.py           explicit operator commands
@@ -171,10 +185,22 @@ The first adapter declares the current official v2 read resources rather than mo
 - basic profile singleton when its scope was explicitly granted
 - body measurement singleton when its scope was explicitly granted
 
-The default continuous scopes are `read:cycles read:recovery read:sleep read:workout offline`.
-Profile and body scopes remain explicit because WHOOP asks apps to limit scopes to those they use.
-The operator can request them without code changes. Whatever a granted endpoint returns is archived
-in full without field filtering.
+The product onboarding uses all six resource families and therefore requests their six read scopes
+plus `offline`. A CLI operator can choose a narrower supported set without code changes. Whatever a
+granted endpoint returns is archived in full without field filtering; missing grants remain visible
+in status instead of becoming apparent empty data.
+
+### Official export and manual evidence
+
+The export importer accepts one bounded ZIP, rejects traversal, links, encryption, excessive entry
+counts, and expansion bombs before committing a run, then stores the exact bundle and exact files.
+Known official CSV filenames are mapped to stable resource slugs only for discovery; unknown future
+files are preserved as `export_file`. It does not normalize rows or infer measurements.
+
+The manual evidence importer accepts only bounded PNG/JPEG bytes whose magic matches the declared
+media type. It stores one `manual_evidence` record per run. `health_read_image` verifies length and
+SHA-256 before returning the base64 image through MCP `ImageContent`; image data is omitted from
+`structuredContent`. Manual evidence is counted separately and never contributes to API item counts.
 
 ## Failure semantics
 
@@ -211,6 +237,8 @@ in full without field filtering.
 - Reading is chunked by byte offset and returns `next_offset` plus `complete`; full storage never
   implies unbounded prompt injection.
 - UTF-8 bodies are returned as text. Other bytes are base64 encoded without interpretation.
+- PNG/JPEG evidence can be returned only through `health_read_image`; the read is whole-record,
+  integrity-checked, and capped at 10 MiB.
 - External payload text is untrusted evidence, never instructions to the MCP server or host agent.
 - The MCP has no write, pull, auth, revoke, delete, shell, URL-fetch, or arbitrary-file tool.
 

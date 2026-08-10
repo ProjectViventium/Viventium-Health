@@ -13,7 +13,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from viventium_health.archive import RawArchive
-from viventium_health.auth import CredentialStore
+from viventium_health.auth import CredentialError, CredentialStore
 from viventium_health.whoop import WhoopClient
 
 NOW = datetime(2026, 7, 26, 12, 0, 0, tzinfo=timezone.utc)
@@ -263,6 +263,8 @@ class WhoopConnectorTests(unittest.TestCase):
 
             self.assertEqual(result.status, "complete")
             self.assertEqual(result.resource_results, {"cycles": "complete"})
+            self.assertEqual(result.resource_item_counts, {"cycles": 2})
+            self.assertEqual(result.item_count, 2)
             records = self.archive.list_records(provider="whoop", run_id=result.run_id, limit=10)
             self.assertEqual(len(records), 2)
             bodies = {
@@ -309,6 +311,8 @@ class WhoopConnectorTests(unittest.TestCase):
             run = self.archive.list_runs(provider="whoop", limit=1)[0]
             self.assertIsNone(run["requested_start"])
             self.assertEqual(run["requested_end"], "2026-07-26T12:00:00.000000Z")
+            self.assertEqual(run["resource_item_counts"], {"cycles": 2})
+            self.assertEqual(run["item_count"], 2)
 
     def test_rate_limit_reset_header_is_wait_seconds_not_an_epoch_timestamp(self) -> None:
         sleeps: list[float] = []
@@ -609,6 +613,31 @@ class WhoopConnectorTests(unittest.TestCase):
             )
             records = self.archive.list_records(provider="whoop", run_id=result.run_id, limit=10)
             self.assertEqual({record["resource"] for record in records}, {"profile", "body_measurement"})
+
+    def test_missing_grant_scope_fails_closed_instead_of_assuming_requested_access(self) -> None:
+        self.credentials.save_client(
+            client_id="client",
+            client_secret="secret",
+            redirect_uri="https://example.com/callback",
+            scopes=["read:cycles", "offline"],
+        )
+        self.credentials.save_token(
+            {
+                "access_token": "current-access",
+                "expires_in": 3600,
+            },
+            obtained_at=NOW,
+        )
+
+        with self.assertRaisesRegex(CredentialError, "no supported read scopes"):
+            WhoopClient(
+                archive=self.archive,
+                credentials=self.credentials,
+                clock=lambda: NOW,
+            ).pull(
+                start=NOW - timedelta(days=3),
+                end=NOW,
+            )
 
     def test_disconnect_revokes_upstream_before_clearing_local_token(self) -> None:
         with FakeWhoopServer() as server:

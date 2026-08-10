@@ -162,12 +162,16 @@ class RawArchiveTests(unittest.TestCase):
             run,
             status="partial",
             resource_results={"cycles": "network_error", "recovery": "complete"},
+            resource_item_counts={"cycles": 0, "recovery": 2},
+            item_count=2,
             finished_at=NOW,
         )
         self.assertEqual(receipt["status"], "partial")
+        self.assertEqual(receipt["item_count"], 2)
         runs = self.archive.list_runs(provider="whoop", limit=10)
         self.assertEqual(runs[0]["run_id"], run.run_id)
         self.assertEqual(runs[0]["status"], "partial")
+        self.assertEqual(runs[0]["resource_item_counts"], {"cycles": 0, "recovery": 2})
         self.assertNotIn("path", runs[0])
 
         with self.assertRaises(FileExistsError):

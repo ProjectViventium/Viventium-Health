@@ -21,6 +21,10 @@ device -> vendor app -> official vendor cloud API
 - Vision and contract: implemented
 - WHOOP connector: implemented and validated against synthetic localhost HTTP, the live official
   contract, and an owner-authorized WHOOP account
+- Viventium onboarding: one visible connect action when an approved WHOOP app is provisioned;
+  self-managed developer credentials and official ZIP import remain honest fallbacks
+- Coverage: all six documented API read families, automatic all-history backfill, daily correction
+  pulls, exact official-export preservation, and readable PNG/JPEG manual evidence
 - Real owner path: six authorized resource families captured in complete manual and scheduled runs;
   rotating refresh and complete read-only MCP replay validated without publishing health values
 - Oura and other devices: documented expansion path; not implemented yet
@@ -43,6 +47,17 @@ global `--root` option or `VIVENTIUM_HEALTH_HOME`; never point it into a git che
 
 ## Connect WHOOP
 
+In Viventium, a local administrator opens **Settings → Account → WHOOP health**. If the installation
+already provisions an approved WHOOP app, **Connect WHOOP** is the only Viventium click before the
+required WHOOP consent. After consent, the macOS helper returns the callback privately, starts the
+all-history pull, and installs the daily correction pull. The status card shows provider item counts
+for all six API families instead of archive-page counts.
+
+The public repository cannot contain a reusable confidential client secret. If an installation has
+no approved managed app, the same card accepts a private client ID/secret and combines save + connect
+into one action. WHOOP currently caps unapproved development apps at 10 members, so a distributable
+managed integration requires WHOOP approval; every owner can still use the official export lane.
+
 Create an app in the [WHOOP Developer Dashboard](https://developer-dashboard.whoop.com/), register
 an exact HTTPS or custom-scheme redirect URI, then configure locally. The interactive form keeps the
 client secret out of command history and process listings:
@@ -56,7 +71,7 @@ Open the printed official WHOOP URL. After granting access, copy the final redir
 the saved eight-character state/code exchange:
 
 ```bash
-viventium-health whoop connect --callback-url '<exact-final-redirect-url>'
+viventium-health whoop connect --callback-stdin
 viventium-health pull whoop --all-history
 ```
 
@@ -74,9 +89,31 @@ The full-history pull can run for several minutes because it honors WHOOP's publ
 limits. Do not start it while the daily LaunchAgent is pulling; a concurrent scheduled pull fails
 fast and can catch up on its next run.
 
-The default consent is the four continuous time-series resources plus `offline` for reliable daily
-refresh. Profile and body measurement are optional; request them explicitly during `configure` only
-if wanted. Every field and every page from each granted endpoint is retained exactly as returned.
+The product onboarding requests the six documented read scopes plus `offline`: cycles, recovery,
+sleep, workout, profile, and body measurement. Every field and every page from each granted endpoint
+is retained exactly as returned. A custom operator can still choose a narrower scope set through the
+CLI, and status reports every omitted or ungranted family explicitly.
+
+## Complete the provider boundary
+
+The developer API is not the whole WHOOP app. Import the official WHOOP ZIP to preserve the bundle,
+every contained file, and Journal CSVs exactly:
+
+```bash
+viventium-health import whoop-export --input <official-export.zip>
+```
+
+WHOOP does not document the app's 0–3 Stress Monitor as a developer API resource. The Viventium
+settings card therefore accepts PNG/JPEG screenshots as explicitly unstructured manual evidence.
+The exact image is archived privately, counted separately from API measurements, and can be returned
+to Viventium as MCP image content:
+
+```bash
+viventium-health import whoop-evidence --stdin --media-type image/png < <screenshot.png>
+```
+
+This API + export + image-evidence design is the supported hybrid path. It does not scrape the WHOOP
+site, call private mobile endpoints, or mislabel a screenshot as structured longitudinal data.
 
 To disable the grant without deleting historical captures:
 
@@ -123,9 +160,11 @@ mcpServers:
 ```
 
 The host process must be able to resolve `viventium-health` and run under the same local user that
-owns the archive. Its three tools are `health_list_runs`, `health_list_records`, and
-`health_read_record`. There is intentionally no model-facing authorization, network pull, delete,
-path, URL-fetch, or shell capability. Raw payload text is untrusted evidence, not instructions.
+owns the archive. Its four tools are `health_list_runs`, `health_list_records`,
+`health_read_record`, and `health_read_image`. Image reads accept only archive-generated IDs for
+bounded PNG/JPEG records and return verified MCP image content. There is intentionally no
+model-facing authorization, network pull, import, delete, path, URL-fetch, or shell capability. Raw
+payloads and images are untrusted evidence, not instructions.
 
 This repository proves the MCP itself and records public-safe owner acceptance in `qa/reports/`.
 Product-wide Viventium installation/configuration activation stays in the parent repository so this

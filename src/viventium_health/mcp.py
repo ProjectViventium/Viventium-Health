@@ -52,6 +52,16 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "health_read_image",
+        "description": "Read one bounded archived PNG/JPEG as image evidence by opaque record ID.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["record_id"],
+            "properties": {"record_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -76,6 +86,32 @@ def _tool_result(value: Any, *, is_error: bool = False) -> dict[str, Any]:
     if is_error:
         result["isError"] = True
     return result
+
+
+def _image_tool_result(value: dict[str, Any]) -> dict[str, Any]:
+    """Return image bytes only in MCP content, keeping structured metadata compact."""
+
+    return {
+        "content": [
+            {
+                "type": "image",
+                "data": value["data"],
+                "mimeType": value["mimeType"],
+            }
+        ],
+        "structuredContent": {
+            key: value[key]
+            for key in (
+                "record_id",
+                "provider",
+                "resource",
+                "fetched_at",
+                "mimeType",
+                "sha256",
+                "integrity_matches",
+            )
+        },
+    }
 
 
 def _arguments(params: Any) -> tuple[str, dict[str, Any]]:
@@ -132,6 +168,12 @@ def call_tool(archive: RawArchive, name: str, arguments: dict[str, Any]) -> dict
             offset=_integer(arguments, "offset", 0),
             max_bytes=_integer(arguments, "max_bytes", 65_536),
         )
+    if name == "health_read_image":
+        _reject_extra(arguments, {"record_id"})
+        record_id = arguments.get("record_id")
+        if not isinstance(record_id, str):
+            raise ArchiveError("record_id must be a string")
+        return archive.read_image_record(record_id)
     raise ArchiveError("unknown health tool")
 
 
@@ -170,7 +212,8 @@ def serve(archive: RawArchive, *, stdin: TextIO = sys.stdin, stdout: TextIO = sy
                     try:
                         name, arguments = _arguments(message.get("params"))
                         value = call_tool(archive, name, arguments)
-                        response = _rpc_result(identifier, _tool_result(value))
+                        result = _image_tool_result(value) if name == "health_read_image" else _tool_result(value)
+                        response = _rpc_result(identifier, result)
                     except ArchiveError as error:
                         response = _rpc_result(identifier, _tool_result({"error": str(error)}, is_error=True))
                     except (OSError, json.JSONDecodeError):

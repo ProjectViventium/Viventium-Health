@@ -14,7 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .image import ImageValidationError, validate_image_bytes
+
 MAX_READ_BYTES = 1024 * 1024
+MAX_IMAGE_READ_BYTES = 10 * 1024 * 1024
 _OPAQUE_ID = re.compile(r"^[0-9a-f]{32}$")
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _SENSITIVE_QUERY_FRAGMENTS = ("token", "secret", "code", "state", "authorization")
@@ -271,10 +274,21 @@ class RawArchive:
         *,
         status: str,
         resource_results: Mapping[str, str],
+        resource_item_counts: Mapping[str, int] | None = None,
+        item_count: int | None = None,
         finished_at: datetime | None = None,
     ) -> dict[str, Any]:
         if status not in {"complete", "partial", "failed"}:
             raise ArchiveError("run status must be complete, partial, or failed")
+        counts = dict(resource_item_counts or {})
+        if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counts.values()):
+            raise ArchiveError("resource item counts must be non-negative integers")
+        if item_count is not None and (
+            not isinstance(item_count, int) or isinstance(item_count, bool) or item_count < 0
+        ):
+            raise ArchiveError("item count must be a non-negative integer")
+        if item_count is not None and counts and sum(counts.values()) != item_count:
+            raise ArchiveError("item count must equal the resource item count total")
         receipt: dict[str, Any] = {
             "schema_version": 1,
             "run_id": run.run_id,
@@ -283,6 +297,10 @@ class RawArchive:
             "status": status,
             "resource_results": dict(resource_results),
         }
+        if resource_item_counts is not None:
+            receipt["resource_item_counts"] = counts
+        if item_count is not None:
+            receipt["item_count"] = item_count
         self._write_new(run.path / "run.finished.json", _json_bytes(receipt))
         return receipt
 
@@ -329,6 +347,8 @@ class RawArchive:
                     "requested_end": started.get("requested_end"),
                     "resources": started.get("resources", []),
                     "resource_results": finished.get("resource_results", {}),
+                    "resource_item_counts": finished.get("resource_item_counts", {}),
+                    "item_count": finished.get("item_count"),
                 }
             )
         results.sort(key=lambda item: (item.get("started_at") or "", item.get("run_id") or ""), reverse=True)
@@ -368,6 +388,7 @@ class RawArchive:
                 "resource": metadata.get("resource"),
                 "fetched_at": metadata.get("fetched_at"),
                 "status": response.get("status"),
+                "content_type": response.get("content_type"),
                 "byte_length": response.get("byte_length", 0),
                 "sha256": response.get("sha256"),
                 "attempt": metadata.get("attempt"),
@@ -378,6 +399,40 @@ class RawArchive:
             results.append(summary)
         results.sort(key=lambda item: (item.get("fetched_at") or "", item.get("record_id") or ""), reverse=True)
         return results[:limit]
+
+    def find_record_by_sha256(
+        self,
+        *,
+        provider: str,
+        resource: str,
+        sha256: str,
+    ) -> dict[str, Any] | None:
+        """Find exact previously archived content without trusting filenames or normalized data."""
+
+        _validate_slug(provider, "provider")
+        _validate_slug(resource, "resource")
+        if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            raise ArchiveError("invalid SHA-256 digest")
+        search_root = self.archive_root / provider
+        if not search_root.exists():
+            return None
+        for metadata_path in search_root.rglob("*.meta.json"):
+            try:
+                metadata = json.loads(metadata_path.read_bytes())
+            except (OSError, json.JSONDecodeError):
+                continue
+            response = metadata.get("response") or {}
+            if metadata.get("resource") == resource and response.get("sha256") == sha256:
+                return {
+                    "record_id": metadata.get("record_id"),
+                    "run_id": metadata.get("run_id"),
+                    "provider": metadata.get("provider"),
+                    "resource": metadata.get("resource"),
+                    "fetched_at": metadata.get("fetched_at"),
+                    "byte_length": response.get("byte_length", 0),
+                    "sha256": response.get("sha256"),
+                }
+        return None
 
     def _find_record_files(self, record_id: str) -> tuple[Path, Path]:
         if not _OPAQUE_ID.fullmatch(record_id):
@@ -434,4 +489,46 @@ class RawArchive:
             "data": data,
             "sha256": expected_hash,
             "integrity_matches": integrity_matches,
+        }
+
+    def read_image_record(self, record_id: str) -> dict[str, Any]:
+        """Read one bounded PNG/JPEG record as MCP-compatible image content."""
+
+        metadata_path, body_path = self._find_record_files(record_id)
+        try:
+            metadata = json.loads(metadata_path.read_bytes())
+            response = metadata["response"]
+            content_type = str(response["content_type"]).split(";", 1)[0].strip().lower()
+            expected_hash = str(response["sha256"])
+            expected_length = int(response["byte_length"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            raise ArchiveError("record metadata is invalid") from None
+        if content_type not in {"image/png", "image/jpeg"}:
+            raise ArchiveError("record is not a supported image")
+        try:
+            body = body_path.read_bytes()
+        except OSError:
+            raise ArchiveError("record body is unavailable") from None
+        if expected_length > MAX_IMAGE_READ_BYTES or len(body) > MAX_IMAGE_READ_BYTES:
+            raise ArchiveError("record image exceeds the read limit")
+        if len(body) != expected_length:
+            raise ArchiveError("record image length does not match its metadata")
+        try:
+            detected_type = validate_image_bytes(body)
+        except ImageValidationError:
+            raise ArchiveError("record image is invalid") from None
+        if detected_type != content_type:
+            raise ArchiveError("record image type does not match its metadata")
+        integrity_matches = hashlib.sha256(body).hexdigest() == expected_hash
+        if not integrity_matches:
+            raise ArchiveError("record image failed its integrity check")
+        return {
+            "record_id": record_id,
+            "provider": metadata.get("provider"),
+            "resource": metadata.get("resource"),
+            "fetched_at": metadata.get("fetched_at"),
+            "mimeType": content_type,
+            "data": base64.b64encode(body).decode("ascii"),
+            "sha256": expected_hash,
+            "integrity_matches": True,
         }

@@ -54,6 +54,8 @@ class PullResult:
     status: str
     resource_results: dict[str, str]
     record_count: int
+    resource_item_counts: dict[str, int]
+    item_count: int
 
 
 @dataclass(frozen=True)
@@ -124,7 +126,7 @@ class WhoopClient:
         state = query.get("state", [None])[0]
         if not isinstance(code, str) or not code:
             raise CredentialError("WHOOP callback omitted the authorization code")
-        expected_state = self.credentials.load_pending_state()
+        expected_state = self.credentials.load_pending_state(now=self.clock())
         if not isinstance(state, str) or not hmac.compare_digest(state, expected_state):
             raise CredentialError("WHOOP callback state did not match the pending authorization")
         token = self._post_token(
@@ -158,7 +160,10 @@ class WhoopClient:
         except HTTPError as error:
             try:
                 status = int(error.code)
-                body = error.read()
+                try:
+                    body = error.read()
+                except OSError:
+                    body = b""
             finally:
                 error.close()
         except (URLError, TimeoutError, OSError) as error:
@@ -212,7 +217,10 @@ class WhoopClient:
         except HTTPError as error:
             try:
                 status = int(error.code)
-                error.read()
+                try:
+                    error.read()
+                except OSError:
+                    pass
             finally:
                 error.close()
         except (URLError, TimeoutError, OSError) as error:
@@ -248,9 +256,13 @@ class WhoopClient:
                 )
         except HTTPError as error:
             try:
+                try:
+                    body = error.read()
+                except OSError:
+                    body = b""
                 return _HttpResult(
                     status=int(error.code),
-                    body=error.read(),
+                    body=body,
                     headers={str(key): str(value) for key, value in error.headers.items()},
                 )
             finally:
@@ -302,8 +314,9 @@ class WhoopClient:
         resource: WhoopResource,
         start: datetime | None,
         end: datetime,
-    ) -> str:
+    ) -> tuple[str, int]:
         page = 1
+        item_count = 0
         next_token: str | None = None
         seen_tokens: set[str] = set()
         while True:
@@ -337,7 +350,7 @@ class WhoopClient:
                     if attempt < self.max_attempts:
                         self.sleep(min(30.0, float(2 ** (attempt - 1))))
                         continue
-                    return f"network_{type(error).__name__}"
+                    return f"network_{type(error).__name__}", item_count
                 self.archive.record_response(
                     run,
                     resource=resource.name,
@@ -357,30 +370,34 @@ class WhoopClient:
                     try:
                         access_token = self._access_token(force_refresh=True)
                     except CredentialError:
-                        return "authorization_refresh_failed"
+                        return "authorization_refresh_failed", item_count
                     refreshed_after_401 = True
                     continue
                 if (response.status == 429 or 500 <= response.status <= 599) and attempt < self.max_attempts:
                     self.sleep(self._retry_delay(response, attempt))
                     continue
-                return f"http_{response.status}"
+                return f"http_{response.status}", item_count
             if response is None or response.status != 200:
-                return "incomplete"
+                return "incomplete", item_count
             if not resource.collection:
-                return "complete"
+                return "complete", 1
             try:
                 control = json.loads(response.body)
             except json.JSONDecodeError:
-                return "invalid_json_control"
+                return "invalid_json_control", item_count
             if not isinstance(control, dict):
-                return "invalid_json_control"
+                return "invalid_json_control", item_count
+            records = control.get("records")
+            if not isinstance(records, list):
+                return "invalid_json_control", item_count
+            item_count += len(records)
             candidate = control.get("next_token")
             if candidate is None or candidate == "":
-                return "complete"
+                return "complete", item_count
             if not isinstance(candidate, str):
-                return "invalid_next_token"
+                return "invalid_next_token", item_count
             if candidate in seen_tokens:
-                return "repeated_next_token"
+                return "repeated_next_token", item_count
             seen_tokens.add(candidate)
             next_token = candidate
             delay = self._proactive_rate_limit_delay(response)
@@ -388,7 +405,7 @@ class WhoopClient:
                 self.sleep(delay)
             page += 1
             if page > 1000:
-                return "pagination_limit"
+                return "pagination_limit", item_count
 
     def _selected_resources(self) -> list[WhoopResource]:
         client = self.credentials.load_client()
@@ -397,7 +414,9 @@ class WhoopClient:
         if isinstance(granted_value, str):
             granted = set(granted_value.split())
         else:
-            granted = set(client["scopes"])
+            # OAuth token scope is the grant evidence. Requested client scopes are not proof that
+            # the owner or provider granted them.
+            granted = set()
         return [resource for resource in WHOOP_RESOURCES if resource.scope in granted]
 
     def pull(self, *, start: datetime | None, end: datetime) -> PullResult:
@@ -417,11 +436,15 @@ class WhoopClient:
                 started_at=self.clock(),
             )
             results: dict[str, str] = {}
+            item_counts: dict[str, int] = {}
             for resource in resources:
                 try:
-                    results[resource.name] = self._pull_resource(run, resource, start, end)
+                    result, item_count = self._pull_resource(run, resource, start, end)
+                    results[resource.name] = result
+                    item_counts[resource.name] = item_count
                 except CredentialError:
                     results[resource.name] = "authorization_failed"
+                    item_counts[resource.name] = 0
             complete_count = sum(value == "complete" for value in results.values())
             if complete_count == len(results):
                 status = "complete"
@@ -433,6 +456,8 @@ class WhoopClient:
                 run,
                 status=status,
                 resource_results=results,
+                resource_item_counts=item_counts,
+                item_count=sum(item_counts.values()),
                 finished_at=self.clock(),
             )
             return PullResult(
@@ -440,4 +465,6 @@ class WhoopClient:
                 status=status,
                 resource_results=results,
                 record_count=self.archive.count_run_records(run),
+                resource_item_counts=item_counts,
+                item_count=sum(item_counts.values()),
             )
