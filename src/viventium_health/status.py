@@ -17,6 +17,9 @@ from .whoop import WHOOP_RESOURCES
 
 
 _SAFE_CODE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+AUTHORIZATION_RECOVERY_STATUSES = frozenset(
+    {"authorization_failed", "authorization_refresh_failed"}
+)
 
 
 class WhoopOnboardingStore:
@@ -179,6 +182,10 @@ def build_whoop_status(
             status = export_run["resource_results"][resource]
         export_coverage[resource] = {"status": status}
     onboarding = WhoopOnboardingStore(credentials.root).load()
+    authorization_recovery_required = any(
+        row.get("status") in AUTHORIZATION_RECOVERY_STATUSES
+        for row in api_coverage.values()
+    )
     pending_authorization = False
     if credentials.pending_path.exists() and not token:
         try:
@@ -208,6 +215,7 @@ def build_whoop_status(
         "state": state,
         "client_configured": client is not None,
         "authorized": token is not None,
+        "authorization_recovery_required": authorization_recovery_required,
         "requested_scopes": requested,
         "granted_scopes": granted,
         "coverage": {"api": api_coverage, "export": export_coverage},

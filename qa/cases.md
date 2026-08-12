@@ -25,6 +25,7 @@
 | `VH-019` | Readable manual WHOOP evidence | App-only views such as Stress Monitor can be supplied without scraping or false structure. | Viventium UI/API/CLI/archive/MCP image | One PNG/JPEG upload stores exact private bytes, counts separately, verifies integrity, returns MCP image content, and rejects spoofed/oversized/non-image input. | PARTIAL — 2026-08-10; automated exact-image/MCP and installed lane visibility pass, but the original attachments expired before live import and must be reattached |
 | `VH-020` | Host-owner access isolation | Shared/public agents cannot expose host-wide private health evidence to ordinary accounts. | LibreChat agent/tool runtime, API, compiler | A structural `local_owner` MCP audience denies missing/non-admin identity before tool startup; API mutations are admin-only; disabled health omits the server. | PASS-INSTALLED-BROWSER — 2026-08-10; owner retrieved WHOOP evidence while an ordinary account had no card, no projected tool, and no health process startup |
 | `VH-021` | Bounded recovery and repeat input | Abandoned OAuth, concurrent callback retries, background work, and duplicate ZIPs recover without runaway polling, clobbering progress, or storage growth. | UI/API/CLI/archive | OAuth state expires in ten minutes; onboarding is single-flight; spawned work has a lifetime; degraded UI names recovery; exact ZIP hash is idempotent. | PASS — 2026-08-10; automated failure/retry cases and installed setup refresh/persistence passed |
+| `VH-022` | Expired/rejected grant recovery | A daily refresh failure does not trap the owner behind a stale local token. | Viventium status/UI/OAuth/archive | The connector emits one recovery flag for both authorization failure lanes; old evidence remains readable; one Connect action starts fresh consent with a stale token or configured/no-run state; unrelated history-import degradation does not offer duplicate consent. | PASS-AUTOMATED / PARTIAL-LIVE — 2026-08-11; component, API sanitizer, and connector status regressions pass and installed status shows the real degraded grant, but fresh provider consent is blocked until Chrome control reconnects. |
 
 ## Natural user-use-case checklist
 
@@ -36,7 +37,7 @@
 | Initial backfill | `VH-001`–`VH-004`, `VH-007`, `VH-016` | Every selected resource/page through the fixed capture time is captured once per attempt with an honest open-start run receipt. |
 | Normal daily pull | `VH-002`, `VH-005`, `VH-011` | Three-day overlap appends a new complete run with no operator work. |
 | Late phone sync/correction | `VH-002`, `VH-014` | Later raw response is retained beside earlier evidence; nothing is overwritten. |
-| Missing/revoked auth | `VH-005`, `VH-006` | Explicit auth blocker; old archive remains readable. |
+| Missing/revoked auth | `VH-005`, `VH-006`, `VH-022` | Explicit auth blocker; old archive remains readable; configured owners get a fresh one-click consent path. |
 | Rate limit/provider outage | `VH-006`, `VH-007` | Bounded retry and incomplete status; never “no WHOOP data.” |
 | Restart | `VH-005`, `VH-011`, `VH-014` | Rotated credential and schedule still work from a new process. |
 | LLM asks for recent evidence | `VH-009`, `VH-010`, `VH-015` | Bounded list/read, exact provenance, no interpretation from connector. |

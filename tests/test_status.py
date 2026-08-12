@@ -189,6 +189,51 @@ class WhoopStatusTests(unittest.TestCase):
         self.assertEqual(status["manual_evidence"]["latest_at"], "2026-08-10T12:00:00.000000Z")
         self.assertIsNone(status["latest_api_run"])
 
+    def test_status_declares_authorization_recovery_for_both_refresh_failure_lanes(self) -> None:
+        self.credentials.save_client(
+            client_id="client",
+            client_secret="secret",
+            redirect_uri="viventium://oauth/whoop",
+            scopes=list(DEFAULT_WHOOP_SCOPES),
+        )
+        self.credentials.save_token(
+            {
+                "access_token": "expired-access",
+                "refresh_token": "rejected-refresh",
+                "expires_in": 3600,
+                "scope": " ".join(DEFAULT_WHOOP_SCOPES),
+            },
+            obtained_at=NOW - timedelta(days=1),
+        )
+
+        for failure in ("authorization_failed", "authorization_refresh_failed"):
+            with self.subTest(failure=failure):
+                run = self.archive.start_run(
+                    provider="whoop",
+                    requested_start=None,
+                    requested_end="2026-08-10T12:00:00.000000Z",
+                    resources=["cycles"],
+                    started_at=NOW,
+                )
+                self.archive.finish_run(
+                    run,
+                    status="failed",
+                    resource_results={"cycles": failure},
+                    resource_item_counts={"cycles": 0},
+                    item_count=0,
+                    finished_at=NOW,
+                )
+
+                status = build_whoop_status(
+                    archive=self.archive,
+                    credentials=self.credentials,
+                    scheduler=FakeScheduler(),
+                    clock=lambda: NOW,
+                )
+
+                self.assertEqual(status["state"], "degraded")
+                self.assertTrue(status["authorization_recovery_required"])
+
 
 if __name__ == "__main__":
     unittest.main()

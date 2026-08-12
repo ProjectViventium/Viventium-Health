@@ -66,6 +66,14 @@ detail or pre-normalizing it.
 17. Accept bounded PNG/JPEG app screenshots as separately labeled unstructured evidence and expose
     them through a read-only integrity-checked MCP image tool. Never call screenshots structured
     longitudinal measurements.
+18. A persisted but no-longer-refreshable grant must remain an honest degraded state with old
+    archive evidence readable and a fresh one-click authorization action visible. Reconnecting must
+    not require a failed revoke, terminal work, deleting the archive, or entering client credentials
+    again when the client is already configured.
+19. Authorization recovery is a connector-owned status contract, not duplicated UI knowledge of
+    pull-result strings. Both initial authorization failure and refresh-after-401 failure set the
+    recovery flag. A configured token with no API run yet also keeps a one-click reconnect escape
+    hatch so migrated or interrupted state cannot trap the owner.
 
 ## Architecture
 
