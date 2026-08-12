@@ -6,10 +6,17 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import base64
 from datetime import datetime, timezone
 from pathlib import Path
 
 from viventium_health.archive import RawArchive
+from viventium_health.evidence import WhoopEvidenceImporter
+
+
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
 
 
 class McpSubprocessTests(unittest.TestCase):
@@ -40,6 +47,11 @@ class McpSubprocessTests(unittest.TestCase):
                 resource_results={"cycles": "complete"},
                 finished_at=now,
             )
+            evidence = WhoopEvidenceImporter(archive=archive, clock=lambda: now).import_image(
+                PNG_1X1,
+                media_type="image/png",
+            )
+            evidence_record = archive.list_records(run_id=evidence.run_id)[0]
             messages = [
                 {
                     "jsonrpc": "2.0",
@@ -74,6 +86,15 @@ class McpSubprocessTests(unittest.TestCase):
                     "method": "tools/call",
                     "params": {"name": "health_read_record", "arguments": {"record_id": "../../private"}},
                 },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "health_read_image",
+                        "arguments": {"record_id": evidence_record["record_id"]},
+                    },
+                },
                 {"jsonrpc": "2.0", "method": "tools/list", "params": {}},
             ]
             environment = os.environ.copy()
@@ -91,17 +112,22 @@ class McpSubprocessTests(unittest.TestCase):
             self.assertEqual(process.returncode, 0, process.stderr)
             self.assertEqual(process.stderr, "")
             responses = [json.loads(line) for line in process.stdout.splitlines()]
-            self.assertEqual([response["id"] for response in responses], [1, 2, 3, 4, 5])
+            self.assertEqual([response["id"] for response in responses], [1, 2, 3, 4, 5, 6])
             self.assertEqual(responses[0]["result"]["protocolVersion"], "2025-06-18")
             tools = responses[1]["result"]["tools"]
             self.assertEqual(
                 {tool["name"] for tool in tools},
-                {"health_list_runs", "health_list_records", "health_read_record"},
+                {"health_list_runs", "health_list_records", "health_read_record", "health_read_image"},
             )
             self.assertNotIn("path", json.dumps(responses[2]))
             self.assertEqual(responses[3]["result"]["structuredContent"]["data"], '{"record')
             self.assertTrue(responses[4]["result"]["isError"])
             self.assertNotIn("/private", json.dumps(responses[4]))
+            image_result = responses[5]["result"]
+            self.assertEqual(image_result["content"][0]["type"], "image")
+            self.assertEqual(image_result["content"][0]["mimeType"], "image/png")
+            self.assertEqual(base64.b64decode(image_result["content"][0]["data"]), PNG_1X1)
+            self.assertNotIn("data", image_result["structuredContent"])
 
 
 if __name__ == "__main__":

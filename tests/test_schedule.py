@@ -99,6 +99,43 @@ class ScheduleTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 scheduler.render(provider="other", hour=6, minute=0, lookback_days=3)
 
+    def test_status_does_not_claim_a_schedule_owned_by_another_health_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            launch_agents = base / "LaunchAgents"
+            foreign = HealthScheduler(
+                root=base / "foreign-health",
+                executable="/path/to/python3",
+                launch_agents_dir=launch_agents,
+                runner=lambda *args, **kwargs: FakeCompleted(),
+                platform_name="Darwin",
+                uid=501,
+            )
+            launch_agents.mkdir(parents=True)
+            foreign.path.write_bytes(
+                foreign.render(provider="whoop", hour=6, minute=0, lookback_days=3)
+            )
+            calls: list[list[str]] = []
+
+            def runner(arguments, **kwargs):
+                calls.append(list(arguments))
+                return FakeCompleted()
+
+            scheduler = HealthScheduler(
+                root=base / "fresh-health",
+                executable="/path/to/python3",
+                launch_agents_dir=launch_agents,
+                runner=runner,
+                platform_name="Darwin",
+                uid=501,
+            )
+
+            status = scheduler.status()
+
+            self.assertFalse(status["configured"])
+            self.assertFalse(status["loaded"])
+            self.assertEqual(calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

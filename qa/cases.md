@@ -7,7 +7,7 @@
 | `VH-001` | Exact raw archival | No provider field is lost or rewritten. | Archive | Body bytes and SHA-256 exactly match the HTTP response; metadata is separate. | PASS — 2026-07-26 |
 | `VH-002` | Append-only history | Corrections and repeated pulls remain auditable. | Archive/CLI | Second pull creates new records; first run bytes and metadata are unchanged. | PASS — 2026-07-26 |
 | `VH-003` | Complete pagination | “Full pull” means all collection pages. | WHOOP connector | Every `next_token` is followed; every page response is archived before parsing. | PASS — 2026-07-26 |
-| `VH-004` | Scope-controlled full resources | Every granted selected endpoint is captured without field filtering. | WHOOP OAuth/API | Default time-series resources run; profile/body run only when explicitly configured. | PASS — 2026-07-26 |
+| `VH-004` | Scope-controlled full resources | Every granted selected endpoint is captured without field filtering. | WHOOP OAuth/API | Product default covers all six documented reads plus offline; narrower CLI grants remain explicit. | PASS — 2026-08-10 |
 | `VH-005` | Rotating OAuth | Daily pulls survive token expiry and restart. | WHOOP OAuth | Refresh rotates atomically, old token is replaced, no token reaches output/archive/log. | PASS — 2026-07-26 |
 | `VH-006` | Failure truth | Empty data is not confused with failed retrieval. | WHOOP/CLI | 401, 403, 429, 5xx, network error, invalid JSON control, and partial paging are distinct. | PASS — 2026-07-26 |
 | `VH-007` | Bounded retry and locking | Daily work is reliable without refresh races or runaway requests. | Pull runtime | One pull per root; bounded retry honors safe delay; dead stale lock recovers. | PASS — 2026-07-26 |
@@ -19,6 +19,13 @@
 | `VH-013` | Package/user flow | A fresh environment can install and use the component. | wheel/CLI | Build, isolated install, help, empty state, fake pull, list, read, MCP all work. | PASS — 2026-07-26 |
 | `VH-014` | Real owner WHOOP acceptance | Actual device data reaches the LLM evidence pool reliably. | WHOOP app/cloud/OAuth/CLI/MCP | Sync, backfill, overlap, correction, refresh/restart, revoke, and full read all pass. | PARTIAL — OAuth, repeated/scheduled pull, rotation/restart, integrity, full MCP read PASS 2026-07-27; correction/revoke open |
 | `VH-015` | Cognitive value | More raw data improves judgment, not just detail. | Viventium agent | A/B answer is more useful and evidence-cited, remains non-diagnostic, and retrieves only when relevant. | PASS — 2026-07-27; real browser A/B after runtime restart |
+| `VH-016` | Complete initial history and rate-limit timing | First connection can retrieve the provider's available API history without an invented earliest date. | WHOOP/CLI | `--all-history` omits optional `start`, fixes `end`, accepts empty pagination completion, proactively throttles, retries headerless 429 by minute, refreshes on later pages, reports an exact count, and fails explicitly at the safety cap. | PASS-LIVE — 2026-08-10; installed owner all-history run completed across all six families and UI/MCP totals agreed |
+| `VH-017` | Minimal-click, truthful onboarding | Other local owners can connect without terminal work or hidden provider limits. | Viventium UI/helper/API/CLI | Provisioned app is one Connect action plus provider consent; self-managed setup combines save/connect; callback stays private; history and schedule start automatically; counts/status remain readable. | PASS-INSTALLED-BROWSER — 2026-08-10; direct setup, consent handoff, readable status, automatic schedule, and refresh persistence passed |
+| `VH-018` | Official export fallback | Journal and provider-export fields survive even without API availability. | Viventium UI/API/CLI/archive/MCP | Exact bounded ZIP and every safe entry are append-only; Journal is discoverable; traversal, links, encryption, and expansion abuse fail closed. | PARTIAL — 2026-08-10; automated archive/security and installed lane visibility pass, but no real WHOOP export ZIP was supplied for live upload |
+| `VH-019` | Readable manual WHOOP evidence | App-only views such as Stress Monitor can be supplied without scraping or false structure. | Viventium UI/API/CLI/archive/MCP image | One PNG/JPEG upload stores exact private bytes, counts separately, verifies integrity, returns MCP image content, and rejects spoofed/oversized/non-image input. | PARTIAL — 2026-08-10; automated exact-image/MCP and installed lane visibility pass, but the original attachments expired before live import and must be reattached |
+| `VH-020` | Host-owner access isolation | Shared/public agents cannot expose host-wide private health evidence to ordinary accounts. | LibreChat agent/tool runtime, API, compiler | A structural `local_owner` MCP audience denies missing/non-admin identity before tool startup; API mutations are admin-only; disabled health omits the server. | PASS-INSTALLED-BROWSER — 2026-08-10; owner retrieved WHOOP evidence while an ordinary account had no card, no projected tool, and no health process startup |
+| `VH-021` | Bounded recovery and repeat input | Abandoned OAuth, concurrent callback retries, background work, and duplicate ZIPs recover without runaway polling, clobbering progress, or storage growth. | UI/API/CLI/archive | OAuth state expires in ten minutes; onboarding is single-flight; spawned work has a lifetime; degraded UI names recovery; exact ZIP hash is idempotent. | PASS — 2026-08-10; automated failure/retry cases and installed setup refresh/persistence passed |
+| `VH-022` | Expired/rejected grant recovery | A daily refresh failure does not trap the owner behind a stale local token. | Viventium status/UI/OAuth/archive | The connector emits one recovery flag for both authorization failure lanes; old evidence remains readable; one Connect action starts fresh consent with a stale token or configured/no-run state; unrelated history-import degradation does not offer duplicate consent. | PASS-AUTOMATED / PARTIAL-LIVE — 2026-08-11; component, API sanitizer, and connector status regressions pass and installed status shows the real degraded grant, but fresh provider consent is blocked until Chrome control reconnects. |
 
 ## Natural user-use-case checklist
 
@@ -26,13 +33,18 @@
 | --- | --- | --- |
 | First run with no config | `VH-006`, `VH-013` | Clear setup action; no files falsely presented as data. |
 | Configure and connect WHOOP | `VH-004`, `VH-005`, `VH-014` | Exact scopes and redirect are visible before consent; token stays private. |
-| Initial backfill | `VH-001`–`VH-004`, `VH-007` | Every selected resource/page is captured once per attempt with an honest run receipt. |
+| Connect from Viventium settings | `VH-017` | One product action when provisioned, combined save/connect otherwise; helper callback triggers backfill and schedule. |
+| Initial backfill | `VH-001`–`VH-004`, `VH-007`, `VH-016` | Every selected resource/page through the fixed capture time is captured once per attempt with an honest open-start run receipt. |
 | Normal daily pull | `VH-002`, `VH-005`, `VH-011` | Three-day overlap appends a new complete run with no operator work. |
 | Late phone sync/correction | `VH-002`, `VH-014` | Later raw response is retained beside earlier evidence; nothing is overwritten. |
-| Missing/revoked auth | `VH-005`, `VH-006` | Explicit auth blocker; old archive remains readable. |
+| Missing/revoked auth | `VH-005`, `VH-006`, `VH-022` | Explicit auth blocker; old archive remains readable; configured owners get a fresh one-click consent path. |
 | Rate limit/provider outage | `VH-006`, `VH-007` | Bounded retry and incomplete status; never “no WHOOP data.” |
 | Restart | `VH-005`, `VH-011`, `VH-014` | Rotated credential and schedule still work from a new process. |
 | LLM asks for recent evidence | `VH-009`, `VH-010`, `VH-015` | Bounded list/read, exact provenance, no interpretation from connector. |
+| Import official WHOOP export | `VH-018` | Exact ZIP/files survive; Journal is readable; unsafe bundles fail before file import. |
+| Add Stress/app screenshot | `VH-019` | Exact PNG/JPEG is private, separately counted, and available to the model as unstructured image evidence. |
+| Ordinary account opens a shared agent | `VH-020` | Host-owner health MCP tools do not initialize and no health payload is readable. |
+| Retry consent or reselect the same export | `VH-021` | Stale consent stops, concurrent callbacks fail closed, and the existing exact export is reused. |
 | Public review/release | `VH-008`, `VH-012`, `VH-013` | No private state; official contract and installed artifact are proven. |
 
 ## Evidence rules
@@ -42,5 +54,6 @@ byte lengths, hashes, test totals, durations, and conclusions only. Do not recor
 OAuth values, local absolute paths, usernames, emails, device IDs, WHOOP user IDs, request IDs, or
 screenshots containing private data.
 
-Latest evidence: [2026-07-27 Viventium cognitive acceptance](reports/2026-07-27-viventium-cognitive-acceptance.md)
+Latest evidence: [2026-08-10 WHOOP onboarding and hybrid QA](reports/2026-08-10-whoop-onboarding-and-hybrid-qa.md),
+[2026-07-27 Viventium cognitive acceptance](reports/2026-07-27-viventium-cognitive-acceptance.md),
 and [2026-07-27 owner WHOOP acceptance](reports/2026-07-27-whoop-owner-acceptance.md).

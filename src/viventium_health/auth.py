@@ -22,7 +22,16 @@ WHOOP_SCOPES = {
     "read:sleep",
     "read:workout",
 }
-DEFAULT_WHOOP_SCOPES = ["read:cycles", "read:recovery", "read:sleep", "read:workout", "offline"]
+DEFAULT_WHOOP_SCOPES = [
+    "read:cycles",
+    "read:recovery",
+    "read:sleep",
+    "read:workout",
+    "read:profile",
+    "read:body_measurement",
+    "offline",
+]
+PENDING_AUTHORIZATION_TTL = timedelta(minutes=10)
 
 
 class CredentialError(RuntimeError):
@@ -157,11 +166,24 @@ class CredentialStore:
             {"state": state, "created_at": format_timestamp(created_at or utc_now())},
         )
 
-    def load_pending_state(self) -> str:
+    def load_pending_state(self, *, now: datetime | None = None) -> str:
         value = self._read(self.pending_path, "pending authorization")
         state = value.get("state")
         if not isinstance(state, str) or len(state) != 8:
             raise CredentialError("WHOOP pending authorization is invalid")
+        created_at = value.get("created_at")
+        if not isinstance(created_at, str):
+            raise CredentialError("WHOOP pending authorization is invalid")
+        try:
+            created = _parse_timestamp(created_at)
+        except ValueError:
+            raise CredentialError("WHOOP pending authorization is invalid") from None
+        reference = now or utc_now()
+        if created > reference + timedelta(minutes=1):
+            raise CredentialError("WHOOP pending authorization is invalid")
+        if created + PENDING_AUTHORIZATION_TTL <= reference:
+            self.clear_pending_state()
+            raise CredentialError("WHOOP pending authorization expired; start again")
         return state
 
     def clear_pending_state(self) -> None:

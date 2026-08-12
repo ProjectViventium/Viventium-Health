@@ -113,10 +113,31 @@ class HealthScheduler:
             raise ScheduleError("launchd rejected the Viventium-Health schedule")
         return self.path
 
+    def _configured_for_root(self) -> bool:
+        try:
+            job = plistlib.loads(self.path.read_bytes())
+            arguments = job["ProgramArguments"]
+            root_index = arguments.index("--root") + 1
+            configured_root = Path(arguments[root_index])
+            return configured_root.resolve(strict=False) == self.root.resolve(strict=False)
+        except (
+            FileNotFoundError,
+            OSError,
+            KeyError,
+            TypeError,
+            ValueError,
+            IndexError,
+            RuntimeError,
+            plistlib.InvalidFileException,
+        ):
+            return False
+
     def status(self) -> dict[str, Any]:
-        configured = self.path.exists()
+        configured = self._configured_for_root()
         if self.platform_name != "Darwin":
             return {"configured": configured, "loaded": False, "platform_supported": False}
+        if not configured:
+            return {"configured": False, "loaded": False, "platform_supported": True}
         result = self._run(["launchctl", "print", f"gui/{self.uid}/{LABEL}"])
         return {"configured": configured, "loaded": result.returncode == 0, "platform_supported": True}
 

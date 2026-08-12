@@ -8,7 +8,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from viventium_health.archive import ArchiveError, RawArchive
+from viventium_health.archive import ArchiveError, RawArchive, RunHandle
 
 NOW = datetime(2026, 7, 26, 12, 34, 56, 123456, tzinfo=timezone.utc)
 
@@ -162,12 +162,16 @@ class RawArchiveTests(unittest.TestCase):
             run,
             status="partial",
             resource_results={"cycles": "network_error", "recovery": "complete"},
+            resource_item_counts={"cycles": 0, "recovery": 2},
+            item_count=2,
             finished_at=NOW,
         )
         self.assertEqual(receipt["status"], "partial")
+        self.assertEqual(receipt["item_count"], 2)
         runs = self.archive.list_runs(provider="whoop", limit=10)
         self.assertEqual(runs[0]["run_id"], run.run_id)
         self.assertEqual(runs[0]["status"], "partial")
+        self.assertEqual(runs[0]["resource_item_counts"], {"cycles": 0, "recovery": 2})
         self.assertNotIn("path", runs[0])
 
         with self.assertRaises(FileExistsError):
@@ -176,6 +180,45 @@ class RawArchiveTests(unittest.TestCase):
                 status="complete",
                 resource_results={},
                 finished_at=NOW,
+            )
+
+    def test_exact_run_record_count_is_scoped_and_rejects_external_paths(self) -> None:
+        first = self.start_run()
+        self.archive.record_response(
+            first,
+            resource="cycles",
+            body=b'{"records":[]}',
+            status=200,
+            content_type="application/json",
+            request_path="/developer/v2/cycle",
+            fetched_at=NOW,
+        )
+        self.archive.record_network_error(
+            first,
+            resource="recovery",
+            request_path="/developer/v2/recovery",
+            request_query={},
+            error=TimeoutError("synthetic"),
+            attempt=1,
+            page=1,
+            fetched_at=NOW,
+        )
+        second = self.start_run()
+        self.archive.record_response(
+            second,
+            resource="cycles",
+            body=b'{"records":[1]}',
+            status=200,
+            content_type="application/json",
+            request_path="/developer/v2/cycle",
+            fetched_at=NOW,
+        )
+
+        self.assertEqual(self.archive.count_run_records(first), 2)
+        self.assertEqual(self.archive.count_run_records(second), 1)
+        with self.assertRaises(ArchiveError):
+            self.archive.count_run_records(
+                RunHandle(run_id="external", provider="whoop", path=Path(self.temp.name))
             )
 
 

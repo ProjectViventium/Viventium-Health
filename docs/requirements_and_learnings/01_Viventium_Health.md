@@ -1,7 +1,7 @@
 # Viventium-Health: vision, requirements, architecture, and learnings
 
-**Status:** WHOOP-first implementation, owner OAuth/data path, and parent-agent cognitive A/B
-validated; late-correction and revocation remain open
+**Status:** WHOOP-first API, minimal-click product onboarding, official export, readable manual-image
+evidence, and parent-agent cognitive A/B implemented; final installed-browser acceptance in progress
 
 **Owner:** Project Viventium
 
@@ -54,6 +54,26 @@ detail or pre-normalizing it.
     sync; Viventium-Health reads the official cloud API from the host computer.
 12. Treat health evidence as a private evidence surface, not saved memory, Feelings state, or an
     automatically injected prompt block.
+13. Give a local administrator one visible connect action when an approved app is provisioned. When
+    it is not, combine private self-managed credential save and authorization into one action rather
+    than hiding the provider prerequisite.
+14. On consent completion, start the all-history pull and install the daily correction schedule
+    automatically; either failure remains visible and independently recoverable.
+15. Report provider item counts for every documented API family, not archive page counts or a vague
+    connected badge.
+16. Preserve an official WHOOP ZIP and every contained file exactly, including Journal CSVs, under
+    strict traversal/link/encryption/count/size/expansion limits.
+17. Accept bounded PNG/JPEG app screenshots as separately labeled unstructured evidence and expose
+    them through a read-only integrity-checked MCP image tool. Never call screenshots structured
+    longitudinal measurements.
+18. A persisted but no-longer-refreshable grant must remain an honest degraded state with old
+    archive evidence readable and a fresh one-click authorization action visible. Reconnecting must
+    not require a failed revoke, terminal work, deleting the archive, or entering client credentials
+    again when the client is already configured.
+19. Authorization recovery is a connector-owned status contract, not duplicated UI knowledge of
+    pull-result strings. Both initial authorization failure and refresh-after-401 failure set the
+    recovery flag. A configured token with no API run yet also keeps a one-click reconnect escape
+    hatch so migrated or interrupted state cannot trap the owner.
 
 ## Architecture
 
@@ -91,7 +111,7 @@ small metadata and reads bounded chunks only when relevant.
 
 ## WHOOP-first official contract
 
-Current official facts verified on 2026-07-26:
+Current official facts verified on 2026-08-10:
 
 - OAuth 2.0 authorization code flow is required for user data.
 - Authorization URL: `https://api.prod.whoop.com/oauth/oauth2/auth`.
@@ -104,12 +124,18 @@ Current official facts verified on 2026-07-26:
   serialized and atomic.
 - Official read scopes are cycles, recovery, sleep, workout, profile, and body measurement.
 - WHOOP instructs apps to limit requested scopes to those actually used.
+- Collection `start` and `end` query parameters are optional; omitting `start` applies no minimum
+  time filter, while a supplied `end` fixes the upper capture boundary.
 - Cycle, recovery, sleep, and workout collections use `records`, `next_token`, and request
-  `nextToken`; all pages must be followed until the token is absent.
+  `nextToken`; an absent or empty token completes pagination.
 - Default published limits are 100 requests/minute and 10,000/day. HTTP 429 and rate-limit headers
-  make throttling observable.
-- Development apps can begin with a small member cap before approval; there is no ordinary public
+  make throttling observable, and `X-RateLimit-Reset` is seconds until the active window resets.
+- Development apps are limited to 10 members before WHOOP approval; there is no ordinary public
   synthetic user-data sandbox.
+- WHOOP's official data export includes CSV files such as physiological cycles, sleeps, workouts,
+  and Journal entries.
+- The app's 0–3 Stress Monitor is not documented as a developer API resource. It remains an explicit
+  manual-image lane rather than a scraped/private API dependency.
 
 Official sources:
 
@@ -120,21 +146,26 @@ Official sources:
 - [OpenAPI document](https://api.prod.whoop.com/developer/doc/openapi.json)
 - [Pagination](https://developer.whoop.com/docs/developing/pagination/)
 - [Rate limiting](https://developer.whoop.com/docs/developing/rate-limiting/)
+- [App approval and 10-member development limit](https://developer.whoop.com/docs/developing/app-approval/)
 - [Mobile export](https://support.whoop.com/s/article/How-to-Export-Your-Data)
 
 ### Scope decision
 
-Default continuous use requests cycles, recovery, sleep, workout, and offline. Profile and body
-measurement are opt-in because the connector does not need a name/email or body baseline to build a
-daily time-series pool. This follows WHOOP's least-scope guidance without filtering any field from
-an endpoint the owner explicitly grants. Operators can configure any official scope set without a
-code change.
+The product card promises visible coverage across all six documented read families and therefore
+requests cycles, recovery, sleep, workout, profile, body measurement, and offline. Each scope backs
+a displayed, archived resource; this remains compatible with WHOOP's guidance to request only scopes
+the app actually uses. A CLI operator can configure a narrower official scope set without a code
+change, and status calls out each missing grant rather than pretending the family is empty.
 
 ### Polling decision
 
 Start with one daily pull over the previous three days. This catches common late sync and corrections
-with tiny request volume. Initial connection may request a configurable 30-day backfill. Every run
-walks every collection page and captures singleton resources only when their scopes are granted.
+with tiny request volume. Initial connection may request all available history exposed through the
+six official v2 read resources: collection requests omit the minimum-time filter, retain a fixed
+current end boundary, and follow pagination until provider completion or the explicit 1,000-page
+per-resource safety cap. Every run captures singleton resources only when their scopes are granted.
+Long pulls proactively pause when the current minute budget is empty, use a one-minute fallback for
+headerless 429 responses, and can rotate an expired token again on a later page.
 
 Webhooks are deferred because they add a public HTTPS receiver, signature verification, duplicate
 handling, and reconciliation while still omitting cycle/body events. Daily overlap is the smallest
@@ -168,10 +199,19 @@ source independently under the same raw archive contract.
 Best provenance, no aggregator fee, cross-platform for cloud-backed devices, and stable enough to
 support daily polling. Cost is one adapter per vendor.
 
-### Official exports — supported direction
+### Official exports — implemented WHOOP fallback
 
-Fast and token-free for cognitive A/B tests and devices without cloud APIs. Manual exports are not a
-dependable daily connector, but a future generic import command can archive them byte-for-byte.
+Fast and token-free for Journal coverage, recovery from an unavailable developer app, and future
+devices without cloud APIs. Manual exports are not a dependable daily connector. The implemented
+WHOOP importer preserves the ZIP and every entry byte-for-byte, recognizes only stable official
+filename families for discovery, and keeps unknown future files instead of discarding them.
+
+### Manual image evidence — implemented app-only fallback
+
+PNG/JPEG screenshots cover visible WHOOP app context that the public API and export do not expose,
+including Stress Monitor. They are private, exact, integrity-checked, and model-readable through MCP
+image content, but remain unstructured/manual. There is no OCR-derived canonical measurement and no
+claim of automated longitudinal completeness.
 
 ### Apple HealthKit / Health Connect — later
 
@@ -216,6 +256,22 @@ Health payloads are sensitive private evidence even when a vendor calls them wel
 - The public repository contains only synthetic fixtures and sanitized counts/hashes.
 - Request metadata stores path and non-secret query parameters, never full headers.
 - MCP record reads are by opaque generated ID, not arbitrary path.
+- MCP image reads accept only archived PNG/JPEG records, enforce a 10 MiB cap, verify declared
+  length and SHA-256, and omit image bytes from structured metadata.
+- Browser-to-local-API setup, callbacks, export ZIPs, and screenshots are administrator-only and
+  available only when the local-subscription and health feature gates are active.
+- The host-wide MCP reader declares the reusable `local_owner` audience and the common MCP loading
+  boundary denies it before discovery/process startup for ordinary accounts or missing request
+  identity. Disabling health omits the MCP server entirely.
+- Client secrets, OAuth callback codes/state, ZIP bytes, screenshot bytes, original filenames,
+  archive IDs, and private paths never enter argv, environment variables, logs, or product status.
+- ZIP import rejects traversal, backslashes, NULs, links/non-regular entries, encryption, excessive
+  entries, per-entry size excess, and aggregate expansion before archiving file contents.
+- Exact repeat export ZIPs are detected by SHA-256 and reuse the existing immutable run instead of
+  consuming unbounded duplicate storage.
+- Pending OAuth state expires after ten minutes, grant scopes are never inferred from requested
+  scopes, and one owner-checked onboarding lock serializes callback exchange, backfill, and schedule
+  setup across browser/helper retries.
 - Raw payload text is untrusted LLM evidence and cannot instruct the connector.
 - Disconnect/revoke and archive deletion are explicit operator actions; v1 does not silently expire
   or delete private evidence.
@@ -228,13 +284,23 @@ Owner-only file permissions reduce accidental local exposure but are not full di
 disk encryption and host account security remain deployment prerequisites. A future multi-user or
 server deployment needs stronger secret storage and tenant isolation before adoption.
 
+Threat model: an ordinary LibreChat account must not read or mutate host-wide health state; a
+malicious callback must not bypass OAuth state/redirect validation; an uploaded archive/image must
+not escape the health root or exhaust unbounded resources; an untrusted provider body/image must not
+gain tool authority; logs/status must not become a covert secret or identity channel. Controls are
+admin and feature gates, exact OAuth validation, stdin-only secret-bearing transport, fixed command
+arguments with no shell, bounded uploads/output/timeouts, archive-generated IDs, owner-only storage,
+hash verification, append-only records, and a read-only MCP surface. The accepted deployment remains
+one local host owner, not per-chat-user health tenancy.
+
 ## LLM use
 
-The model gets three simple capabilities:
+The model gets four simple capabilities:
 
 1. list capture runs;
 2. list response records;
 3. read a record in bounded byte chunks.
+4. read a bounded verified PNG/JPEG record as MCP image content.
 
 The tools describe sources, timestamps, HTTP truth, hashes, byte size, and paging. They do not say
 what “good recovery,” “poor sleep,” or any health condition means. The agent can inspect raw evidence
@@ -249,8 +315,16 @@ The reader must make operational ambiguity impossible:
 
 ## Natural use cases
 
-- First connection: owner creates a WHOOP developer app, grants selected scopes, and runs a bounded
-  backfill.
+- Managed first connection: local administrator clicks Connect, consents at WHOOP, and Viventium
+  automatically starts full-history import plus daily corrections.
+- Self-managed first connection: administrator creates a private WHOOP developer app, enters its
+  credentials once, and uses the combined Save and connect action; the 10-member provider cap is
+  stated visibly.
+- Export fallback: owner imports one official ZIP; the exact bundle, known CSV families including
+  Journal, and unknown files remain discoverable without claiming continuous sync; selecting the
+  same exact ZIP again reports it already imported without duplicating the archive.
+- App-only evidence: owner adds a PNG/JPEG WHOOP screenshot in one picker action; it is counted and
+  Viventium can inspect it as image evidence without converting it to an API metric.
 - Daily pool: scheduler pulls the previous three days and appends every response/page.
 - Late sync: device data appears after the first pull and is captured by a later overlapping run.
 - Correction: vendor changes a sleep/recovery/workout; both old and new raw responses survive.
@@ -270,8 +344,9 @@ The durable cases live in `qa/cases.md`. The critical evidence chain is:
 `requirement -> operator/LLM use case -> QA case -> exact expected result -> actual evidence -> gap`
 
 Automated acceptance must prove exact bytes, append-only behavior, all-page collection pulls,
-singleton scope selection, retry/failure truth, token rotation, locking, owner permissions, read
-paging, MCP protocol behavior, scheduler generation, package installation, and public safety.
+all-six/default and narrower scope selection, retry/failure truth, token rotation, locking, owner
+permissions, export/image input hardening, read paging/image content, MCP protocol behavior,
+scheduler generation, product API/UI gates, package installation, and public safety.
 
 The live official contract test proves only that source paths still exist and unauthenticated access
 fails closed. It is not owner-data acceptance.
@@ -331,8 +406,9 @@ owner-specific filesystem paths.
 Add Oura next by implementing only its OAuth, endpoint list, webhook/poll controls, and pagination.
 The raw archive, reader, MCP, scheduler, permissions, and QA framework must remain unchanged.
 
-Add generic official-export import after WHOOP owner acceptance if it materially broadens supported
-devices. Preserve source bytes and import metadata; do not parse every export into a common schema.
+Generalize the implemented exact WHOOP export contract only when another provider materially
+broadens supported devices. Preserve source bytes and import metadata; do not parse every export
+into a common schema.
 
 Add native iOS/Android bridges only after explicit device demand proves that official cloud APIs and
 exports are insufficient. That is a separate product surface with separate permissions and QA.
