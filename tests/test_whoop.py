@@ -45,6 +45,15 @@ class FakeWhoopHandler(BaseHTTPRequestHandler):
         if self.path != "/oauth/oauth2/token":
             self.send_json(404, b'{"error":"not_found"}')
             return
+        if self.response_mode == "token_unavailable" and form.get("grant_type") == ["refresh_token"]:
+            self.send_json(503, b'{"error":"temporarily_unavailable"}')
+            return
+        if (
+            self.response_mode == "token_unavailable_400"
+            and form.get("grant_type") == ["refresh_token"]
+        ):
+            self.send_json(400, b'{"error":"temporarily_unavailable"}')
+            return
         if form.get("grant_type") == ["authorization_code"]:
             self.send_json(
                 200,
@@ -149,6 +158,29 @@ class FakeWhoopHandler(BaseHTTPRequestHandler):
         if self.response_mode == "empty_next_token" and parsed.path.endswith("/cycle"):
             self.send_json(200, b'{"records":[],"next_token":""}')
             return
+        if self.response_mode == "all_resources_paginated":
+            collection_paths = {
+                "/developer/v2/cycle": "cycles",
+                "/developer/v2/recovery": "recovery",
+                "/developer/v2/activity/sleep": "sleep",
+                "/developer/v2/activity/workout": "workout",
+            }
+            resource = collection_paths.get(parsed.path)
+            if resource is not None:
+                cursor = f"private-{resource}-page-2"
+                if query.get("nextToken") == [cursor]:
+                    body = json.dumps(
+                        {"records": [{"provider_extension": f"{resource}-second"}]}
+                    ).encode("utf-8")
+                else:
+                    body = json.dumps(
+                        {
+                            "records": [{"provider_extension": f"{resource}-first"}],
+                            "next_token": cursor,
+                        }
+                    ).encode("utf-8")
+                self.send_json(200, body)
+                return
         if parsed.path.endswith("/cycle"):
             if query.get("nextToken") == ["private-page-2"]:
                 self.send_json(200, self.page_two, {"ETag": '"page-two"'})
@@ -313,6 +345,67 @@ class WhoopConnectorTests(unittest.TestCase):
             self.assertEqual(run["requested_end"], "2026-07-26T12:00:00.000000Z")
             self.assertEqual(run["resource_item_counts"], {"cycles": 2})
             self.assertEqual(run["item_count"], 2)
+
+    def test_all_history_pages_every_granted_collection_and_preserves_all_six_families(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "all_resources_paginated"
+            scopes = [
+                "read:cycles",
+                "read:recovery",
+                "read:sleep",
+                "read:workout",
+                "read:profile",
+                "read:body_measurement",
+                "offline",
+            ]
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=scopes,
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "current-access",
+                    "refresh_token": "refresh-one",
+                    "expires_in": 3600,
+                    "scope": " ".join(scopes),
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server).pull(start=None, end=NOW)
+
+            expected_counts = {
+                "cycles": 2,
+                "recovery": 2,
+                "sleep": 2,
+                "workout": 2,
+                "profile": 1,
+                "body_measurement": 1,
+            }
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(result.resource_item_counts, expected_counts)
+            self.assertEqual(result.resource_results, dict.fromkeys(expected_counts, "complete"))
+            self.assertEqual(result.record_count, 10)
+            self.assertEqual(result.item_count, 10)
+
+            requests = [request for request in FakeWhoopHandler.requests if request["method"] == "GET"]
+            self.assertEqual(len(requests), 10)
+            for request in requests:
+                query = request["query"]
+                self.assertNotIn("start", query)
+                if request["path"] not in {
+                    "/developer/v2/user/profile/basic",
+                    "/developer/v2/user/measurement/body",
+                }:
+                    self.assertEqual(query["end"], ["2026-07-26T12:00:00.000000Z"])
+
+            paged = [request for request in requests if "nextToken" in request["query"]]
+            self.assertEqual(len(paged), 4)
+            archived_metadata = "\n".join(path.read_text() for path in self.root.rglob("*.meta.json"))
+            for resource in ("cycles", "recovery", "sleep", "workout"):
+                self.assertNotIn(f"private-{resource}-page-2", archived_metadata)
 
     def test_rate_limit_reset_header_is_wait_seconds_not_an_epoch_timestamp(self) -> None:
         sleeps: list[float] = []
@@ -546,6 +639,187 @@ class WhoopConnectorTests(unittest.TestCase):
             self.assertEqual(statuses.count(401), 1)
             self.assertEqual(statuses.count(200), 2)
             self.assertEqual(self.credentials.load_token()["refresh_token"], "refresh-two")
+
+    def test_rejected_expired_grant_is_refreshed_once_and_blocks_the_whole_pull(self) -> None:
+        with FakeWhoopServer() as server:
+            scopes = [
+                "read:cycles",
+                "read:recovery",
+                "read:sleep",
+                "read:workout",
+                "read:profile",
+                "read:body_measurement",
+                "offline",
+            ]
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=scopes,
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "expired-access",
+                    "refresh_token": "rejected-refresh",
+                    "expires_in": 3600,
+                    "scope": " ".join(scopes),
+                },
+                obtained_at=NOW - timedelta(hours=2),
+            )
+
+            result = self.make_client(server).pull(start=NOW - timedelta(days=3), end=NOW)
+
+            refreshes = [
+                request
+                for request in FakeWhoopHandler.requests
+                if request["method"] == "POST"
+                and request["form"].get("grant_type") == ["refresh_token"]
+            ]
+            self.assertEqual(len(refreshes), 1)
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(
+                result.resource_results,
+                {
+                    "cycles": "authorization_failed",
+                    "recovery": "blocked_by_authorization_failure",
+                    "sleep": "blocked_by_authorization_failure",
+                    "workout": "blocked_by_authorization_failure",
+                    "profile": "blocked_by_authorization_failure",
+                    "body_measurement": "blocked_by_authorization_failure",
+                },
+            )
+
+    def test_rejected_refresh_after_provider_401_blocks_remaining_resources(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "unauthorized_once"
+            scopes = [
+                "read:cycles",
+                "read:recovery",
+                "read:sleep",
+                "read:workout",
+                "read:profile",
+                "read:body_measurement",
+                "offline",
+            ]
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=scopes,
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "provider-rejected-access",
+                    "refresh_token": "rejected-refresh",
+                    "expires_in": 3600,
+                    "scope": " ".join(scopes),
+                },
+                obtained_at=NOW,
+            )
+
+            result = self.make_client(server).pull(start=NOW - timedelta(days=3), end=NOW)
+
+            refreshes = [
+                request
+                for request in FakeWhoopHandler.requests
+                if request["method"] == "POST"
+                and request["form"].get("grant_type") == ["refresh_token"]
+            ]
+            gets = [request for request in FakeWhoopHandler.requests if request["method"] == "GET"]
+            self.assertEqual(len(refreshes), 1)
+            self.assertEqual(len(gets), 1)
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(
+                result.resource_results,
+                {
+                    "cycles": "authorization_refresh_failed",
+                    "recovery": "blocked_by_authorization_failure",
+                    "sleep": "blocked_by_authorization_failure",
+                    "workout": "blocked_by_authorization_failure",
+                    "profile": "blocked_by_authorization_failure",
+                    "body_measurement": "blocked_by_authorization_failure",
+                },
+            )
+
+    def test_transient_refresh_outage_is_not_reported_as_a_dead_grant(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "token_unavailable"
+            scopes = [
+                "read:cycles",
+                "read:recovery",
+                "read:sleep",
+                "read:workout",
+                "read:profile",
+                "read:body_measurement",
+                "offline",
+            ]
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=scopes,
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "expired-access",
+                    "refresh_token": "still-valid-refresh",
+                    "expires_in": 3600,
+                    "scope": " ".join(scopes),
+                },
+                obtained_at=NOW - timedelta(hours=2),
+            )
+
+            result = self.make_client(server).pull(start=NOW - timedelta(days=3), end=NOW)
+
+            refreshes = [
+                request
+                for request in FakeWhoopHandler.requests
+                if request["method"] == "POST"
+                and request["form"].get("grant_type") == ["refresh_token"]
+            ]
+            gets = [request for request in FakeWhoopHandler.requests if request["method"] == "GET"]
+            self.assertEqual(len(refreshes), 1)
+            self.assertEqual(len(gets), 0)
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(
+                result.resource_results,
+                {
+                    "cycles": "provider_unavailable",
+                    "recovery": "blocked_by_provider_unavailable",
+                    "sleep": "blocked_by_provider_unavailable",
+                    "workout": "blocked_by_provider_unavailable",
+                    "profile": "blocked_by_provider_unavailable",
+                    "body_measurement": "blocked_by_provider_unavailable",
+                },
+            )
+
+    def test_non_grant_token_error_does_not_request_fresh_authorization(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "token_unavailable_400"
+            scopes = ["read:cycles", "read:recovery", "offline"]
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=scopes,
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "expired-access",
+                    "refresh_token": "still-valid-refresh",
+                    "expires_in": 3600,
+                    "scope": " ".join(scopes),
+                },
+                obtained_at=NOW - timedelta(hours=2),
+            )
+
+            result = self.make_client(server).pull(start=NOW - timedelta(days=3), end=NOW)
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(result.resource_results["cycles"], "provider_unavailable")
+            self.assertEqual(
+                result.resource_results["recovery"], "blocked_by_provider_unavailable"
+            )
 
     def test_invalid_pagination_control_and_network_failure_are_not_empty_data(self) -> None:
         with FakeWhoopServer() as server:

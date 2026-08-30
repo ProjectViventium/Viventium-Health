@@ -20,7 +20,7 @@ from .lock import LockBusyError, PullLock
 from .mcp import serve
 from .schedule import HealthScheduler, ScheduleError
 from .status import WhoopOnboardingStore, build_whoop_status
-from .whoop import WhoopClient, WhoopError
+from .whoop import WhoopClient, WhoopError, WhoopTokenUnavailable
 
 
 def _json(value: Any, stream: TextIO) -> None:
@@ -190,6 +190,9 @@ def _onboard_locked(
     receipts.update(phase="authorization", status="running")
     try:
         client.complete_authorization(callback_url)
+    except WhoopTokenUnavailable:
+        receipts.update(phase="authorization", status="failed", error_code="provider_unavailable")
+        raise
     except CredentialError:
         receipts.update(phase="authorization", status="failed", error_code="authorization_failed")
         raise

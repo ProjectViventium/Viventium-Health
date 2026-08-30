@@ -18,7 +18,11 @@ from .whoop import WHOOP_RESOURCES
 
 _SAFE_CODE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 AUTHORIZATION_RECOVERY_STATUSES = frozenset(
-    {"authorization_failed", "authorization_refresh_failed"}
+    {
+        "authorization_failed",
+        "authorization_refresh_failed",
+        "blocked_by_authorization_failure",
+    }
 )
 
 
@@ -156,12 +160,30 @@ def build_whoop_status(
         (run for run in runs if api_resource_names.intersection(run.get("resources") or [])),
         None,
     )
+    successful_api_run = next(
+        (
+            run
+            for run in runs
+            if api_resource_names.intersection(run.get("resources") or [])
+            and run.get("status") in {"complete", "partial"}
+            and "complete" in (run.get("resource_results") or {}).values()
+        ),
+        None,
+    )
     export_run = next((run for run in runs if "export_bundle" in (run.get("resources") or [])), None)
     evidence_runs = [run for run in runs if "manual_evidence" in (run.get("resources") or [])]
     public_api_run = _public_run(api_run)
     public_export_run = _public_run(export_run)
     api_coverage: dict[str, Any] = {}
     for resource in WHOOP_RESOURCES:
+        latest_complete_resource_run = next(
+            (
+                run
+                for run in runs
+                if (run.get("resource_results") or {}).get(resource.name) == "complete"
+            ),
+            None,
+        )
         if not client:
             coverage_status = "setup_required"
         elif resource.scope not in granted:
@@ -173,7 +195,11 @@ def build_whoop_status(
         api_coverage[resource.name] = {
             "scope": resource.scope,
             "status": coverage_status,
-            "items": (api_run.get("resource_item_counts") or {}).get(resource.name) if api_run else None,
+            "items": (
+                (latest_complete_resource_run.get("resource_item_counts") or {}).get(resource.name)
+                if latest_complete_resource_run
+                else None
+            ),
         }
     export_coverage: dict[str, Any] = {}
     for resource in ("physiological_cycles", "sleeps", "workouts", "journal_entries"):
@@ -220,6 +246,7 @@ def build_whoop_status(
         "granted_scopes": granted,
         "coverage": {"api": api_coverage, "export": export_coverage},
         "latest_api_run": public_api_run,
+        "latest_successful_api_run": _public_run(successful_api_run),
         "latest_export_run": public_export_run,
         "manual_evidence": {
             "item_count": sum(

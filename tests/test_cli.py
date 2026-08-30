@@ -16,6 +16,7 @@ from viventium_health.auth import DEFAULT_WHOOP_SCOPES
 from viventium_health.cli import build_parser, run
 from viventium_health.lock import LockBusyError, PullLock
 from viventium_health.schedule import ScheduleError
+from viventium_health.whoop import WhoopTokenUnavailable
 
 
 class CliSubprocessTests(unittest.TestCase):
@@ -285,6 +286,31 @@ class CliPrivateInputTests(unittest.TestCase):
             receipt = json.loads((root / "state" / "whoop.onboarding.json").read_text())
             self.assertEqual(receipt["phase"], "ready")
             self.assertEqual(receipt["status"], "completed")
+
+    def test_onboard_labels_a_transient_token_outage_without_invalidating_consent(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "health"
+            args = build_parser().parse_args(
+                ["--root", str(root), "whoop", "onboard", "--callback-stdin"]
+            )
+            with patch("viventium_health.cli.WhoopClient") as client_class:
+                client_class.return_value.complete_authorization.side_effect = WhoopTokenUnavailable(
+                    "WHOOP token endpoint returned HTTP 503"
+                )
+                with self.assertRaises(WhoopTokenUnavailable):
+                    run(
+                        args,
+                        stdout=StringIO(),
+                        stderr=StringIO(),
+                        stdin=StringIO(
+                            "viventium://oauth/whoop?code=synthetic&state=12345678\n"
+                        ),
+                    )
+
+            receipt = json.loads((root / "state" / "whoop.onboarding.json").read_text())
+            self.assertEqual(receipt["phase"], "authorization")
+            self.assertEqual(receipt["status"], "failed")
+            self.assertEqual(receipt["error_code"], "provider_unavailable")
 
     def test_onboard_keeps_daily_recovery_when_initial_history_is_partial(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

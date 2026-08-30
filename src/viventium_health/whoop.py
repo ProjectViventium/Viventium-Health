@@ -30,6 +30,10 @@ class WhoopError(RuntimeError):
     """Safe WHOOP transport or protocol failure."""
 
 
+class WhoopTokenUnavailable(WhoopError):
+    """The token service failed without proving that the owner's grant is invalid."""
+
+
 @dataclass(frozen=True)
 class WhoopResource:
     name: str
@@ -167,15 +171,26 @@ class WhoopClient:
             finally:
                 error.close()
         except (URLError, TimeoutError, OSError) as error:
-            raise CredentialError(f"WHOOP token endpoint is unavailable ({type(error).__name__})") from None
+            raise WhoopTokenUnavailable(
+                f"WHOOP token endpoint is temporarily unavailable ({type(error).__name__})"
+            ) from None
+        token_error = None
+        try:
+            error_payload = json.loads(body)
+            if isinstance(error_payload, dict) and isinstance(error_payload.get("error"), str):
+                token_error = error_payload["error"].strip().lower()
+        except json.JSONDecodeError:
+            pass
+        if status in {400, 401, 403} and token_error == "invalid_grant":
+            raise CredentialError("WHOOP authorization grant is invalid")
         if status != 200:
-            raise CredentialError(f"WHOOP token endpoint returned HTTP {status}")
+            raise WhoopTokenUnavailable(f"WHOOP token endpoint returned HTTP {status}")
         try:
             token = json.loads(body)
         except json.JSONDecodeError:
-            raise CredentialError("WHOOP token endpoint returned invalid JSON") from None
+            raise WhoopTokenUnavailable("WHOOP token endpoint returned invalid JSON") from None
         if not isinstance(token, dict):
-            raise CredentialError("WHOOP token endpoint returned an invalid object")
+            raise WhoopTokenUnavailable("WHOOP token endpoint returned an invalid object")
         return token
 
     def refresh_access_token(self) -> dict[str, Any]:
@@ -194,7 +209,7 @@ class WhoopClient:
             }
         )
         if not isinstance(token.get("refresh_token"), str) or not token["refresh_token"]:
-            raise CredentialError("WHOOP refresh response omitted the rotated refresh token")
+            raise WhoopTokenUnavailable("WHOOP refresh response omitted the rotated refresh token")
         return self.credentials.save_token(token, obtained_at=self.clock())
 
     def revoke_access(self) -> None:
@@ -369,6 +384,8 @@ class WhoopClient:
                 if response.status == 401 and not refreshed_after_401 and attempt < self.max_attempts:
                     try:
                         access_token = self._access_token(force_refresh=True)
+                    except WhoopTokenUnavailable:
+                        return "provider_unavailable", item_count
                     except CredentialError:
                         return "authorization_refresh_failed", item_count
                     refreshed_after_401 = True
@@ -437,14 +454,23 @@ class WhoopClient:
             )
             results: dict[str, str] = {}
             item_counts: dict[str, int] = {}
+            run_blocker: tuple[str, str] | None = None
             for resource in resources:
-                try:
-                    result, item_count = self._pull_resource(run, resource, start, end)
-                    results[resource.name] = result
-                    item_counts[resource.name] = item_count
-                except CredentialError:
-                    results[resource.name] = "authorization_failed"
-                    item_counts[resource.name] = 0
+                if run_blocker is None:
+                    try:
+                        result, item_count = self._pull_resource(run, resource, start, end)
+                    except WhoopTokenUnavailable:
+                        result, item_count = "provider_unavailable", 0
+                    except CredentialError:
+                        result, item_count = "authorization_failed", 0
+                    if result in {"authorization_failed", "authorization_refresh_failed"}:
+                        run_blocker = (result, "blocked_by_authorization_failure")
+                    elif result == "provider_unavailable":
+                        run_blocker = (result, "blocked_by_provider_unavailable")
+                else:
+                    result, item_count = run_blocker[1], 0
+                results[resource.name] = result
+                item_counts[resource.name] = item_count
             complete_count = sum(value == "complete" for value in results.values())
             if complete_count == len(results):
                 status = "complete"
