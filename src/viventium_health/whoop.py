@@ -179,7 +179,7 @@ class WhoopClient:
             error_payload = json.loads(body)
             if isinstance(error_payload, dict) and isinstance(error_payload.get("error"), str):
                 token_error = error_payload["error"].strip().lower()
-        except json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             pass
         if status in {400, 401, 403} and token_error == "invalid_grant":
             raise CredentialError("WHOOP authorization grant is invalid")
@@ -187,7 +187,7 @@ class WhoopClient:
             raise WhoopTokenUnavailable(f"WHOOP token endpoint returned HTTP {status}")
         try:
             token = json.loads(body)
-        except json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             raise WhoopTokenUnavailable("WHOOP token endpoint returned invalid JSON") from None
         if not isinstance(token, dict):
             raise WhoopTokenUnavailable("WHOOP token endpoint returned an invalid object")

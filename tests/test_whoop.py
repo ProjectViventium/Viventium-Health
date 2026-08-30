@@ -48,6 +48,9 @@ class FakeWhoopHandler(BaseHTTPRequestHandler):
         if self.response_mode == "token_unavailable" and form.get("grant_type") == ["refresh_token"]:
             self.send_json(503, b'{"error":"temporarily_unavailable"}')
             return
+        if self.response_mode == "token_invalid_utf8" and form.get("grant_type") == ["refresh_token"]:
+            self.send_json(503, b"\xff")
+            return
         if (
             self.response_mode == "token_unavailable_400"
             and form.get("grant_type") == ["refresh_token"]
@@ -796,6 +799,34 @@ class WhoopConnectorTests(unittest.TestCase):
     def test_non_grant_token_error_does_not_request_fresh_authorization(self) -> None:
         with FakeWhoopServer() as server:
             FakeWhoopHandler.response_mode = "token_unavailable_400"
+            scopes = ["read:cycles", "read:recovery", "offline"]
+            self.credentials.save_client(
+                client_id="client",
+                client_secret="secret",
+                redirect_uri="https://example.com/callback",
+                scopes=scopes,
+            )
+            self.credentials.save_token(
+                {
+                    "access_token": "expired-access",
+                    "refresh_token": "still-valid-refresh",
+                    "expires_in": 3600,
+                    "scope": " ".join(scopes),
+                },
+                obtained_at=NOW - timedelta(hours=2),
+            )
+
+            result = self.make_client(server).pull(start=NOW - timedelta(days=3), end=NOW)
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(result.resource_results["cycles"], "provider_unavailable")
+            self.assertEqual(
+                result.resource_results["recovery"], "blocked_by_provider_unavailable"
+            )
+
+    def test_non_utf8_token_error_is_provider_unavailable(self) -> None:
+        with FakeWhoopServer() as server:
+            FakeWhoopHandler.response_mode = "token_invalid_utf8"
             scopes = ["read:cycles", "read:recovery", "offline"]
             self.credentials.save_client(
                 client_id="client",
