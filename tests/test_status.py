@@ -234,6 +234,177 @@ class WhoopStatusTests(unittest.TestCase):
                 self.assertEqual(status["state"], "degraded")
                 self.assertTrue(status["authorization_recovery_required"])
 
+    def test_failed_refresh_keeps_the_latest_successful_api_counts_visible(self) -> None:
+        self.credentials.save_client(
+            client_id="client",
+            client_secret="secret",
+            redirect_uri="viventium://oauth/whoop",
+            scopes=list(DEFAULT_WHOOP_SCOPES),
+        )
+        self.credentials.save_token(
+            {
+                "access_token": "expired-access",
+                "refresh_token": "rejected-refresh",
+                "expires_in": 3600,
+                "scope": " ".join(DEFAULT_WHOOP_SCOPES),
+            },
+            obtained_at=NOW - timedelta(days=1),
+        )
+        successful = self.archive.start_run(
+            provider="whoop",
+            requested_start=None,
+            requested_end="2026-08-10T11:00:00.000000Z",
+            resources=["cycles", "recovery"],
+            started_at=NOW - timedelta(hours=1),
+        )
+        self.archive.finish_run(
+            successful,
+            status="complete",
+            resource_results={"cycles": "complete", "recovery": "complete"},
+            resource_item_counts={"cycles": 4, "recovery": 3},
+            item_count=7,
+            finished_at=NOW - timedelta(hours=1),
+        )
+        failed = self.archive.start_run(
+            provider="whoop",
+            requested_start="2026-08-07T12:00:00.000000Z",
+            requested_end="2026-08-10T12:00:00.000000Z",
+            resources=["cycles", "recovery"],
+            started_at=NOW,
+        )
+        self.archive.finish_run(
+            failed,
+            status="failed",
+            resource_results={
+                "cycles": "authorization_failed",
+                "recovery": "authorization_failed",
+            },
+            resource_item_counts={"cycles": 0, "recovery": 0},
+            item_count=0,
+            finished_at=NOW,
+        )
+
+        status = build_whoop_status(
+            archive=self.archive,
+            credentials=self.credentials,
+            scheduler=FakeScheduler(),
+            clock=lambda: NOW,
+        )
+
+        self.assertEqual(status["state"], "degraded")
+        self.assertEqual(status["latest_api_run"]["item_count"], 0)
+        self.assertEqual(status["latest_successful_api_run"]["item_count"], 7)
+        self.assertEqual(status["coverage"]["api"]["cycles"]["status"], "authorization_failed")
+        self.assertEqual(status["coverage"]["api"]["cycles"]["items"], 4)
+
+    def test_partial_run_uses_the_latest_complete_count_for_each_resource(self) -> None:
+        self.credentials.save_client(
+            client_id="client",
+            client_secret="secret",
+            redirect_uri="viventium://oauth/whoop",
+            scopes=list(DEFAULT_WHOOP_SCOPES),
+        )
+        self.credentials.save_token(
+            {
+                "access_token": "current-access",
+                "refresh_token": "current-refresh",
+                "expires_in": 3600,
+                "scope": " ".join(DEFAULT_WHOOP_SCOPES),
+            },
+            obtained_at=NOW,
+        )
+        complete = self.archive.start_run(
+            provider="whoop",
+            requested_start=None,
+            requested_end="2026-08-10T11:00:00.000000Z",
+            resources=["cycles", "recovery", "sleep"],
+            started_at=NOW - timedelta(hours=1),
+        )
+        self.archive.finish_run(
+            complete,
+            status="complete",
+            resource_results={"cycles": "complete", "recovery": "complete", "sleep": "complete"},
+            resource_item_counts={"cycles": 42, "recovery": 40, "sleep": 39},
+            item_count=121,
+            finished_at=NOW - timedelta(hours=1),
+        )
+        partial = self.archive.start_run(
+            provider="whoop",
+            requested_start="2026-08-07T12:00:00.000000Z",
+            requested_end="2026-08-10T12:00:00.000000Z",
+            resources=["cycles", "recovery", "sleep"],
+            started_at=NOW,
+        )
+        self.archive.finish_run(
+            partial,
+            status="partial",
+            resource_results={
+                "cycles": "complete",
+                "recovery": "authorization_refresh_failed",
+                "sleep": "blocked_by_authorization_failure",
+            },
+            resource_item_counts={"cycles": 43, "recovery": 0, "sleep": 0},
+            item_count=43,
+            finished_at=NOW,
+        )
+
+        status = build_whoop_status(
+            archive=self.archive,
+            credentials=self.credentials,
+            scheduler=FakeScheduler(),
+            clock=lambda: NOW,
+        )
+
+        self.assertEqual(status["coverage"]["api"]["cycles"]["items"], 43)
+        self.assertEqual(status["coverage"]["api"]["recovery"]["items"], 40)
+        self.assertEqual(status["coverage"]["api"]["sleep"]["items"], 39)
+        self.assertTrue(status["authorization_recovery_required"])
+
+    def test_provider_outage_does_not_request_fresh_authorization(self) -> None:
+        self.credentials.save_client(
+            client_id="client",
+            client_secret="secret",
+            redirect_uri="viventium://oauth/whoop",
+            scopes=list(DEFAULT_WHOOP_SCOPES),
+        )
+        self.credentials.save_token(
+            {
+                "access_token": "current-access",
+                "refresh_token": "current-refresh",
+                "expires_in": 3600,
+                "scope": " ".join(DEFAULT_WHOOP_SCOPES),
+            },
+            obtained_at=NOW,
+        )
+        failed = self.archive.start_run(
+            provider="whoop",
+            requested_start=None,
+            requested_end="2026-08-10T12:00:00.000000Z",
+            resources=["cycles", "recovery"],
+            started_at=NOW,
+        )
+        self.archive.finish_run(
+            failed,
+            status="failed",
+            resource_results={
+                "cycles": "provider_unavailable",
+                "recovery": "blocked_by_provider_unavailable",
+            },
+            resource_item_counts={"cycles": 0, "recovery": 0},
+            item_count=0,
+            finished_at=NOW,
+        )
+
+        status = build_whoop_status(
+            archive=self.archive,
+            credentials=self.credentials,
+            scheduler=FakeScheduler(),
+            clock=lambda: NOW,
+        )
+
+        self.assertEqual(status["state"], "degraded")
+        self.assertFalse(status["authorization_recovery_required"])
+
 
 if __name__ == "__main__":
     unittest.main()

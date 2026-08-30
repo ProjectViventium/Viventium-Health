@@ -69,11 +69,20 @@ detail or pre-normalizing it.
 18. A persisted but no-longer-refreshable grant must remain an honest degraded state with old
     archive evidence readable and a fresh one-click authorization action visible. Reconnecting must
     not require a failed revoke, terminal work, deleting the archive, or entering client credentials
-    again when the client is already configured.
+    again when the client is already configured. Status keeps the latest acquisition attempt
+    separate from successful API evidence per resource family, so a current auth blocker or a
+    partial run cannot relabel preserved imported counts as zero.
 19. Authorization recovery is a connector-owned status contract, not duplicated UI knowledge of
     pull-result strings. Both initial authorization failure and refresh-after-401 failure set the
     recovery flag. A configured token with no API run yet also keeps a one-click reconnect escape
     hatch so migrated or interrupted state cannot trap the owner.
+20. Once a token refresh proves the grant invalid during a pull, do not repeat the same terminal
+    credential operation for each remaining resource. Mark the contacted resource with the exact
+    authorization failure and every unattempted resource as blocked by that failure, then let fresh
+    authorization provide the next recovery attempt. A timeout, network error, rate limit, 5xx,
+    malformed success response, or other token-service failure does not prove invalid consent: mark
+    it as provider unavailable, keep the recovery flag false, and let the next independent pull
+    retry without asking the owner to reconnect.
 
 ## Architecture
 

@@ -20,6 +20,26 @@ class FakeCompleted:
 
 
 class ScheduleTests(unittest.TestCase):
+    def test_daily_acquisition_remains_at_0600_and_only_pulls_whoop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            scheduler = HealthScheduler(
+                root=Path(temp) / "health",
+                executable="/path/to/python3",
+                launch_agents_dir=Path(temp) / "agents",
+                runner=lambda *args, **kwargs: FakeCompleted(),
+                platform_name="Darwin",
+                uid=501,
+            )
+
+            job = plistlib.loads(
+                scheduler.render(provider="whoop", hour=6, minute=0, lookback_days=3)
+            )
+
+            self.assertEqual(job["Label"], "com.projectviventium.health.whoop")
+            self.assertEqual(job["StartCalendarInterval"], {"Hour": 6, "Minute": 0})
+            self.assertEqual(job["ProgramArguments"][-4:], ["pull", "whoop", "--lookback-days", "3"])
+            self.assertNotIn("health_context", " ".join(job["ProgramArguments"]))
+
     def test_install_is_explicit_private_and_contains_no_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             base = Path(temp)
